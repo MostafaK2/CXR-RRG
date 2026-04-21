@@ -1,0 +1,49 @@
+checkpoint:
+  model_checkpoint_path: /home/public/mkamal/checkpoints
+  resume: null
+  save_best_only: true
+  save_dir: results
+data:
+  csv_file: /home/public/mkamal/dataset/filtered_data/train/train_cleaned.csv
+  h5_file: /home/public/mkamal/dataset/filtered_data/train/train.h5
+  max_len: 200
+  min_freq: 3
+  num_workers: 4
+  testval_size: 0.3
+eval:
+  chestXbertModelWeights: /home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/utils/chexbert.pth
+  findings_label_path: /home/public/mkamal/dataset/filtered_data/finding_labels.csv
+  impression_label_path: /home/public/mkamal/dataset/filtered_data/impression_labels.csv
+  reports_label_path: /home/public/mkamal/dataset/filtered_data/reports_label.csv
+logging:
+  eval_every: 1
+  log_every: 50
+  run_name: null
+model:
+  d_ff: 512
+  d_model: 256
+  dropout: 0.2
+  freeze_enc_layers: 6
+  max_len: 200
+  n_heads: 8
+  n_layers: 8
+  vocab_size: 15711
+reproducibility:
+  seed: 42
+special_tokens:
+  bos: <bos>
+  eos: <eos>
+  finding: <finding>
+  impression: <impression>
+  pad: <pad>
+  unk: <unk>
+training:
+  batch_size: 64
+  device: cuda
+  epochs: 30
+  grad_clip: 1.0
+  label_smoothing: 0
+  learning_rate: 1e-4
+  patience: 5
+  warmup_steps: 1000
+  weight_decay: 1e-4

@@ -1,0 +1,59 @@
+# configs/captioner-conf/main.yml
+
+checkpoint:
+  save_dir: results
+  save_best_only: true
+  resume: null
+  model_checkpoint_path: "/home/public/mkamal/checkpoints" 
+
+data:
+  csv_file: "/home/public/mkamal/dataset/filtered_data/train/train_cleaned.csv"  
+  h5_file: "/home/public/mkamal/dataset/filtered_data/train/train.h5"  
+  max_len: 200
+  min_freq: 3
+  testval_size: 0.3
+  num_workers: 4
+
+model:
+  d_model: 256
+  n_heads: 8
+  n_layers: 8
+  d_ff: 512
+  dropout: 0.2
+  max_len: 200
+  vocab_size: 16000
+  freeze_enc_layers: 6
+
+training:
+  epochs: 30
+  batch_size: 64
+  learning_rate: 1e-4
+  weight_decay: 1e-4
+  grad_clip: 1.0
+  warmup_steps: 1000
+  patience: 5
+  label_smoothing: 0
+  device: cuda
+
+reproducibility:
+  seed: 42
+
+special_tokens:
+  pad: <pad>
+  unk: <unk>
+  bos: <bos>
+  eos: <eos>
+  finding: <finding>
+  impression: <impression>
+
+logging:
+  run_name: null
+  log_every: 50
+  eval_every: 1
+
+eval: 
+  findings_label_path: "/home/public/mkamal/dataset/filtered_data/finding_labels.csv"
+  impression_label_path: "/home/public/mkamal/dataset/filtered_data/impression_labels.csv"
+  reports_label_path: "/home/public/mkamal/dataset/filtered_data/reports_label.csv"
+  chestXbertModelWeights: "/home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/utils/chexbert.pth"
+  

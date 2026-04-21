@@ -1,0 +1,67 @@
+===== TRAINING RESULTS =====
+
+---- GENERAL ----
+Best Epoch: 0
+Best Validation Loss: inf
+Model Class: ChestXrayMRG
+
+---- CONFIG ----
+<__main__.Config object at 0x74b9bf1fd580>
+
+---- VALIDATION METRICS ----
+BLEU Scores: [0.2454728370221328, 0.1328223814031003, 0.08235125460873605, 0.042706023919159425]
+METEOR Score: 0.1924775741941398
+CheXbert Metrics:
+  Enlarged Cardiomediastinum_precision: 0.0
+  Enlarged Cardiomediastinum_recall: 0.0
+  Enlarged Cardiomediastinum_f1: 0.0
+  Cardiomegaly_precision: 0.0
+  Cardiomegaly_recall: 0.0
+  Cardiomegaly_f1: 0.0
+  Lung Opacity_precision: 0.0
+  Lung Opacity_recall: 0.0
+  Lung Opacity_f1: 0.0
+  Lung Lesion_precision: 0.0
+  Lung Lesion_recall: 0.0
+  Lung Lesion_f1: 0.0
+  Edema_precision: 0.0
+  Edema_recall: 0.0
+  Edema_f1: 0.0
+  Consolidation_precision: 0.0
+  Consolidation_recall: 0.0
+  Consolidation_f1: 0.0
+  Pneumonia_precision: 0.0
+  Pneumonia_recall: 0.0
+  Pneumonia_f1: 0.0
+  Atelectasis_precision: 0.25
+  Atelectasis_recall: 0.5
+  Atelectasis_f1: 0.3333
+  Pneumothorax_precision: 0.0
+  Pneumothorax_recall: 0.0
+  Pneumothorax_f1: 0.0
+  Pleural Effusion_precision: 0.2857
+  Pleural Effusion_recall: 0.6667
+  Pleural Effusion_f1: 0.4
+  Pleural Other_precision: 0.0
+  Pleural Other_recall: 0.0
+  Pleural Other_f1: 0.0
+  Fracture_precision: 0.0
+  Fracture_recall: 0.0
+  Fracture_f1: 0.0
+  Support Devices_precision: 0.875
+  Support Devices_recall: 0.7778
+  Support Devices_f1: 0.8235
+  No Finding_precision: 0.0
+  No Finding_recall: 0.0
+  No Finding_f1: 0.0
+  macro_precision: 0.1008
+  macro_recall: 0.1389
+  macro_f1: 0.1112
+
+---- TEST METRICS ----
+BLEU Scores: None
+METEOR Score: None
+
+---- LOSSES ----
+Train Losses: []
+Validation Losses: []
