@@ -35,7 +35,7 @@ model:
   img_enc_backbone: resnet50
   img_enc_freeze_layer: 8
   pad_id: 0
-  vocab_size: 15713
+  vocab_size: 17381
 reproducibility:
   seed: 42
 special_tokens:
@@ -48,7 +48,7 @@ special_tokens:
 training:
   batch_size: 64
   device: cuda
-  epochs: 30
+  epochs: 1
   grad_clip: 1.0
   label_smoothing: 0
   learning_rate: 0.000314

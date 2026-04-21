@@ -2,66 +2,66 @@
 
 ---- GENERAL ----
 Best Epoch: 0
-Best Validation Loss: inf
+Best Validation Loss: 2.3466
 Model Class: ChestXrayMRG
 
 ---- CONFIG ----
-<__main__.Config object at 0x74b9bf1fd580>
+<__main__.Config object at 0x7d120fedd580>
 
 ---- VALIDATION METRICS ----
-BLEU Scores: [0.2454728370221328, 0.1328223814031003, 0.08235125460873605, 0.042706023919159425]
-METEOR Score: 0.1924775741941398
+BLEU Scores: [0.20806451612903223, 0.11234013849031549, 0.07288049298687295, 0.04538406601818434]
+METEOR Score: 0.26301630039243606
 CheXbert Metrics:
   Enlarged Cardiomediastinum_precision: 0.0
   Enlarged Cardiomediastinum_recall: 0.0
   Enlarged Cardiomediastinum_f1: 0.0
-  Cardiomegaly_precision: 0.0
-  Cardiomegaly_recall: 0.0
-  Cardiomegaly_f1: 0.0
+  Cardiomegaly_precision: 1.0
+  Cardiomegaly_recall: 0.1667
+  Cardiomegaly_f1: 0.2857
   Lung Opacity_precision: 0.0
   Lung Opacity_recall: 0.0
   Lung Opacity_f1: 0.0
   Lung Lesion_precision: 0.0
   Lung Lesion_recall: 0.0
   Lung Lesion_f1: 0.0
-  Edema_precision: 0.0
-  Edema_recall: 0.0
-  Edema_f1: 0.0
+  Edema_precision: 0.5
+  Edema_recall: 0.5
+  Edema_f1: 0.5
   Consolidation_precision: 0.0
   Consolidation_recall: 0.0
   Consolidation_f1: 0.0
   Pneumonia_precision: 0.0
   Pneumonia_recall: 0.0
   Pneumonia_f1: 0.0
-  Atelectasis_precision: 0.25
-  Atelectasis_recall: 0.5
-  Atelectasis_f1: 0.3333
+  Atelectasis_precision: 0.0
+  Atelectasis_recall: 0.0
+  Atelectasis_f1: 0.0
   Pneumothorax_precision: 0.0
   Pneumothorax_recall: 0.0
   Pneumothorax_f1: 0.0
-  Pleural Effusion_precision: 0.2857
-  Pleural Effusion_recall: 0.6667
-  Pleural Effusion_f1: 0.4
+  Pleural Effusion_precision: 0.8571
+  Pleural Effusion_recall: 0.75
+  Pleural Effusion_f1: 0.8
   Pleural Other_precision: 0.0
   Pleural Other_recall: 0.0
   Pleural Other_f1: 0.0
   Fracture_precision: 0.0
   Fracture_recall: 0.0
   Fracture_f1: 0.0
-  Support Devices_precision: 0.875
-  Support Devices_recall: 0.7778
-  Support Devices_f1: 0.8235
+  Support Devices_precision: 0.8571
+  Support Devices_recall: 0.75
+  Support Devices_f1: 0.8
   No Finding_precision: 0.0
   No Finding_recall: 0.0
   No Finding_f1: 0.0
-  macro_precision: 0.1008
-  macro_recall: 0.1389
-  macro_f1: 0.1112
+  macro_precision: 0.2296
+  macro_recall: 0.1548
+  macro_f1: 0.1704
 
 ---- TEST METRICS ----
 BLEU Scores: None
 METEOR Score: None
 
 ---- LOSSES ----
-Train Losses: []
-Validation Losses: []
+Train Losses: [3.74830815919295]
+Validation Losses: [2.346580537103063]

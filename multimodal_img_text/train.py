@@ -180,14 +180,12 @@ def build_tokenizer(train_df, caption_col, max_len, special_tokens, vocab_size=1
     train_captions = train_df[caption_col].tolist()
     tokenizer.train_from_iterator(train_captions, trainer=trainer)
 
-    tokenizer.enable_truncation(max_length=max_len - 2)
-
     word2idx = tokenizer.get_vocab()
     logger.info(f"Vocabulary size: {len(word2idx)}")
 
     return word2idx, tokenizer
 
-train_df, valid_df, test_df = load_and_split(config["data"]["csv_file"], val_size=0.15, test_size=0.15, seed=SEED, logger=logger)
+train_df, valid_df, test_df = load_and_split(config["data"]["csv_file"], val_size=config["data"]["valid_sz"], test_size=config["data"]["test_sz"], seed=SEED, logger=logger)
 
 word2idx, tokenizer = build_tokenizer(   # just trains the tokenizer
     train_df,
@@ -388,7 +386,9 @@ class Config:
 
 def main():
     # - - - -- - - - - Configurations and results folders - --  -- -- 
+
     conf = Config()
+    logger.info(f"{conf.VOCAB_SIZE}, {tokenizer.get_vocab_size()}, finding: {conf.FINDING}: {word2idx[conf.FINDING]} Impression: {conf.IMPRESSION}: {word2idx[conf.IMPRESSION]}")
     
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -463,7 +463,8 @@ def main():
         eos        = conf.EOS, 
         unk        = conf.UNK,
         finding    = conf.FINDING,
-        impression = conf.IMPRESSION, 
+        impression = conf.IMPRESSION,
+        decoder_max_len = conf.DECODER_MAX_LEN, 
         tokenizer  = tokenizer, 
         transform  = imagenet_transform
     )
@@ -477,7 +478,8 @@ def main():
         eos        = conf.EOS, 
         unk        = conf.UNK,
         finding    = conf.FINDING,
-        impression = conf.IMPRESSION,  
+        impression = conf.IMPRESSION, 
+        decoder_max_len = conf.DECODER_MAX_LEN,  
         tokenizer  = tokenizer, 
         transform  = imagenet_transform
     )
@@ -491,7 +493,8 @@ def main():
         eos        = conf.EOS, 
         unk        = conf.UNK, 
         finding    = conf.FINDING,
-        impression = conf.IMPRESSION, 
+        impression = conf.IMPRESSION,
+        decoder_max_len = conf.DECODER_MAX_LEN,  
         tokenizer  = tokenizer, 
         transform  = imagenet_transform
     )
@@ -631,7 +634,7 @@ def main():
         tokenizer, 
         word2idx,
         config, 
-        conf.DEVICE, 
+        conf.DEVICE,
         labels_path=config["eval"]["reports_label_path"] # switch to reports_label_path
     )
 

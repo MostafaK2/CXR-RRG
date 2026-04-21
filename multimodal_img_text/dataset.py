@@ -57,7 +57,8 @@ class CXRDataset(Dataset):
                  eos: str, 
                  unk: str,
                  finding: str,
-                 impression: str, 
+                 impression: str,
+                 decoder_max_len: int, 
                  tokenizer = None, 
                  transform = None):
         
@@ -75,9 +76,12 @@ class CXRDataset(Dataset):
         self.bos = bos
         self.eos = eos
         self.unk = unk
+        self.finding = finding
+        self.impression = impression
+        self.decoder_max_len = decoder_max_len
 
         self.impression_col = "section_impression_gen"
-        self.findings_col = "section_finding_gen"
+        self.findings_col = "section_findings_gen"
 
         self.clinical_his_col = "clinical_history"
  
@@ -86,6 +90,38 @@ class CXRDataset(Dataset):
     def _add_bos_eos(self, token_ids):
        ids = [self.vocab[self.bos]] + token_ids + [self.vocab[self.eos]]
        return ids
+    
+    def construct_report(self, finding_text: str|None, impression_text):
+        if not self.tokenizer:
+            raise ValueError("Tokenizer is required to construct report")
+        
+        bos_id        = self.vocab[self.bos]
+        eos_id        = self.vocab[self.eos]
+        finding_id    = self.vocab[self.finding]
+        impression_id = self.vocab[self.impression]
+        max_len       = self.decoder_max_len
+
+        impression_ids = self.tokenizer.encode(impression_text).ids
+
+        has_finding = not pd.isna(finding_text)
+        if has_finding: 
+            # <BOS> <FINDINGS> ... <IMPRESSION> ... <EOS>
+            impression_slots = len(impression_ids)
+            finding_budget = max_len - impression_slots - 4
+            if finding_budget > 0:
+                finding_ids = self.tokenizer.encode(str(finding_text)).ids[:finding_budget]
+                token_ids = ([bos_id] + [finding_id] + finding_ids + [impression_id] + impression_ids + [eos_id])
+            else:
+                impression_ids = impression_ids[:max_len - 3]  # BOS IMPRESSION EOS
+                token_ids = ([bos_id] + [impression_id] + impression_ids + [eos_id])
+        else: 
+            # <BOS> <IMPRESSION> ... <EOS>
+            impression_ids = impression_ids[:max_len - 3]  # BOS IMPRESSION EOS
+            token_ids = ([bos_id] + [impression_id] + impression_ids + [eos_id])
+
+        assert len(token_ids) <= max_len, \
+            f"Bug: sequence length {len(token_ids)} > max_len {max_len}"
+        return token_ids 
 
     def _get_h5(self):
         if self.h5_file is None:
@@ -115,13 +151,12 @@ class CXRDataset(Dataset):
 
 
         # Only doing impression NOW (TEST) --> change to Findings + Impression
-        report = row[self.impression_col]  # adjust to your exact column name
-        if self.tokenizer: 
-            encodings = self.tokenizer.encode(report)
-            report = self._add_bos_eos(encodings.ids)
-        report = torch.tensor(report, dtype=torch.long)
-        src_seq  = report[:-1]   # Everyting except last, shifted by one
-        tgt_seq = report[1:]     # Everything except first, shifted by one   
+        finding_text    = row[self.findings_col]
+        impression_text = row[self.impression_col]  
+        report          = self.construct_report(finding_text, impression_text) # findings + impression
+        report          = torch.tensor(report, dtype=torch.long)
+        src_seq         = report[:-1]   # Everyting except last, shifted by one
+        tgt_seq         = report[1:]     # Everything except first, shifted by one   
 
 
         # Everything outs
