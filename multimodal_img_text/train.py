@@ -452,7 +452,6 @@ def main():
     ## CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED
     label_df = reorder_labels_df(config['eval']['reports_label_path'])
 
-
     # Datasets
     train_ds = CXRDataset(
         df_reports = train_df,

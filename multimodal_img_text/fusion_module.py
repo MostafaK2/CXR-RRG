@@ -92,8 +92,8 @@ class CrossAttentionFusion(nn.Module):
 
         # "given what I know clinically, look again at the image"
         cross_attn2, attn_weights = self.cross_attn2(
-            query=Z,
-            key = img_tokens,
+            query=img_tokens,
+            key = Z,
             value = img_tokens
         )
         Z = Z + self.dropout(cross_attn2)
