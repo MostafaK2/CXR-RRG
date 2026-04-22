@@ -270,7 +270,7 @@ def evaluate_metric(model,
         generated_text = generate_report(model, sample, tokenizer, word2idx, config, device=device)
         reference_list.append(reference_text)
         generated_list.append(generated_text)
-
+        # print(f"{generated_text}\n {CHEXBERT_LABELS} \n{sample[4]}\n\n")
         # METEOR
         meteor_score = calculate_meteor_score(reference_text, generated_text)
         meteor_scores.append(meteor_score)
