@@ -74,9 +74,9 @@ class CrossAttentionFusion(nn.Module):
         # pooled_clin = self._masked_pool(clincal_text_token, clincal_mask)
         # gate = torch.sigmoid(self.gate_linear(pooled_clin))
 
-        # HARD GATE
-        seq_len = (~clincal_mask).sum(dim=1)
-        gate = (seq_len > 2).float().unsqueeze(1)
+        # # HARD GATE
+        # seq_len = (~clincal_mask).sum(dim=1)
+        # gate = (seq_len > 2).float().unsqueeze(1)
 
         #-------- pre norms -------------------
         norm_img = self.norm_img(img_tokens)    # [B, 49, d_model]
@@ -102,37 +102,37 @@ class CrossAttentionFusion(nn.Module):
             value = img_tokens
         )
 
-        print(gate)
-        Z = img_tokens + gate.unsqueeze(1) * (cross_out + cross_attn2)
+        # gate can provide conflicting signals to decoder
+        Z = img_tokens + (cross_out + cross_attn2)
 
         return Z, attn_weight # Z vector [B, 49, d_model]
 
 
 
-if __name__ == "__main__":
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# if __name__ == "__main__":
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    B        = 4
-    N_img    = 49     # 7x7 from CNN encoder
-    N_txt    = 6     # simulated token sequence length
+#     B        = 4
+#     N_img    = 49     # 7x7 from CNN encoder
+#     N_txt    = 6     # simulated token sequence length
 
-    fusion = CrossAttentionFusion(
-        d_model   = 512,
-        num_heads = 8,
-        ff_dim    = 728,
-        dropout   = 0.1,
-    ).to(device)
+#     fusion = CrossAttentionFusion(
+#         d_model   = 512,
+#         num_heads = 8,
+#         ff_dim    = 728,
+#         dropout   = 0.1,
+#     ).to(device)
 
-    total_params = sum(p.numel() for p in fusion.parameters())
-    print(total_params)
+#     total_params = sum(p.numel() for p in fusion.parameters())
+#     print(total_params)
 
-    img_tokens  = torch.randn(B, N_img, 512).to(device)
-    clin_tokens = torch.randn(B, N_txt, 512).to(device)
+#     img_tokens  = torch.randn(B, N_img, 512).to(device)
+#     clin_tokens = torch.randn(B, N_txt, 512).to(device)
 
-    # Simulate padding mask — last 5 tokens are padding for all samples
-    clin_mask   = torch.zeros(B, N_txt, dtype=torch.bool).to(device)
-    clin_mask[:, -4:] = True
+#     # Simulate padding mask — last 5 tokens are padding for all samples
+#     clin_mask   = torch.zeros(B, N_txt, dtype=torch.bool).to(device)
+#     clin_mask[:, -4:] = True
 
-    out, attn = fusion(img_tokens, clin_tokens, clin_mask)
+#     out, attn = fusion(img_tokens, clin_tokens, clin_mask)
 
-    print(out.shape)
+#     print(out.shape)

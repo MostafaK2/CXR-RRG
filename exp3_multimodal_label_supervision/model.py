@@ -100,9 +100,6 @@ class Multimodal_Memory(nn.Module):
         # Fuse img and text (cross attention) with res connection + gating
         z, _ = self.fusion(image_tokens, text_tokens, text_tok_mask) # [B, 49, d_model]
 
-
-        # use z to do Disease logits and tokens for extra superiviosn (NOT IMPLEMENTED YET) 
-
         # decoder outputs
         reports = self.decoder(z, caption_ids)
         return reports
@@ -112,7 +109,7 @@ if __name__ == "__main__":
     model = Multimodal_Memory(
         d_model=512,
 
-        cnn_backbone="resnet50",
+        cnn_backbone="densenet121",
         cnn_freeze_layers=8,
 
         bert_model="emilyalsentzer/Bio_ClinicalBERT",
