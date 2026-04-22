@@ -15,6 +15,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR
+import torch.nn.functional as F
 
 import torchvision.transforms as transforms
 import pandas as pd
@@ -39,6 +40,79 @@ from utils.logginghelpers import log_chexbert_f1_summary, save_training_results
 
 import matplotlib.pyplot as plt
 
+
+# ------------------------FOCAL LOSS -----------------------
+class ClinicalFocalLoss(nn.Module):
+    """
+    Focal loss + clinical token weighting.
+    Directly targets your Cluster A zero-F1 classes.
+    """
+    def __init__(self, vocab_weights: torch.Tensor,
+                 gamma: float = 2.0,
+                 ignore_index: int = 0,
+                 label_smoothing: float = 0.1):
+        super().__init__()
+        self.gamma           = gamma
+        self.ignore_index    = ignore_index
+        self.label_smoothing = label_smoothing
+        self.register_buffer('vocab_weights', vocab_weights)
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor):
+        # logits:  [B*T, V]
+        # targets: [B*T]
+        ce = F.cross_entropy(
+            logits, targets,
+            weight          = self.vocab_weights,
+            ignore_index    = self.ignore_index,
+            label_smoothing = self.label_smoothing,
+            reduction       = 'none'
+        )
+        with torch.no_grad():
+            probs = F.softmax(logits, dim=-1)
+            pt    = probs.gather(1, targets.clamp(min=0).unsqueeze(1)).squeeze(1)
+            focal = (1.0 - pt) ** self.gamma
+
+        mask = (targets != self.ignore_index).float()
+        return (focal * ce * mask).sum() / (mask.sum() + 1e-8)
+
+
+def build_clinical_vocab_weights(tokenizer, device,
+                                  boost_rare: float = 12.0,
+                                  boost_medium: float = 4.0) -> torch.Tensor:
+    weights = torch.ones(tokenizer.get_vocab_size())
+
+    # Cluster A — terms your model never writes
+    rare_terms = {
+        "pneumonia": boost_rare, "pneumonic": boost_rare,
+        "fracture":  boost_rare, "fractured": boost_rare,
+        "nodule":    boost_rare, "lesion":    boost_rare,
+        "mass":      boost_rare * 0.8,
+        "thickening":boost_rare, "mesothelioma": boost_rare,
+        "mediastinum":boost_rare, "mediastinal": boost_rare,
+        "widened":   boost_rare, "widening":    boost_rare,
+        "consolidation": boost_rare, "consolidative": boost_rare,
+    }
+    # Cluster B + negation — important but not dead
+    medium_terms = {
+        "cardiomegaly":  boost_medium, "atelectasis":   boost_medium,
+        "atelectatic":   boost_medium, "pneumothorax":  boost_medium,
+        "edema":         boost_medium, "effusion":      boost_medium,
+        "no":            boost_medium, "without":       boost_medium,
+        "unremarkable":  boost_medium, "clear":         boost_medium * 0.5,
+    }
+
+    for term, boost in {**rare_terms, **medium_terms}.items():
+        # Use your BPE tokenizer's encode
+        ids = tokenizer.encode(term).ids
+        for id_ in ids:
+            if id_ < tokenizer.get_vocab_size():
+                weights[id_] = max(weights[id_], boost)
+
+    logger.info(f"Clinical vocab weights built. "
+                f"Max weight: {weights.max():.1f}, "
+                f"Tokens boosted: {(weights > 1.0).sum().item()}")
+    return weights.to(device)
+
 # ----------------------- LOGGING ---------------------
 
 os.makedirs("logs", exist_ok=True)
@@ -47,7 +121,7 @@ logging.basicConfig(
     format="%(asctime)s | [%(levelname)s] | %(message)s",
     handlers=[
         logging.StreamHandler(),                 # print to console
-        logging.FileHandler("logs/multimodal_label_train.log", mode='w')    # save to file
+        logging.FileHandler("logs/multimodal_label_train2.log", mode='w')    # save to file
     ]
 )
 logger = logging.getLogger()
@@ -133,6 +207,8 @@ args = get_args()
 DEFAULT = os.path.join(_find_root(), 'configs', 'multimodal_label_conf', 'main.yml')
 config  = load_config(args.config, default_config=DEFAULT, logger=logger)
 config = override_config(args,config)
+
+
 
 # ---------------- Device ----------------  COPY THIS
 def pick_device():
@@ -428,7 +504,19 @@ def main():
     model = model.to(conf.DEVICE)
 
     optimizer = AdamW(model.parameters(), lr=conf.LR, weight_decay=conf.WEIGHT_DECAY)
+
+    # CE Loss (prev)
     criterion = nn.CrossEntropyLoss(ignore_index=conf.PAD_ID, label_smoothing=conf.LABEL_SMOOTHING)
+
+    # FOCAL LOSS
+    # ── REPLACE with this ──────────────────────────────────────────────────
+    vocab_weights = build_clinical_vocab_weights(tokenizer, DEVICE)
+    criterion = ClinicalFocalLoss(
+        vocab_weights   = vocab_weights,
+        gamma           = 2.0,
+        ignore_index    = conf.PAD_ID,
+        label_smoothing = conf.LABEL_SMOOTHING   # reuses your existing config value
+    )
 
     # Parameter Calculation
     total_params     = sum(p.numel() for p in model.parameters())
@@ -524,7 +612,7 @@ def main():
     best_valid_loss  = float("inf")
     patience_counter = 0
     patience = conf.PATIENCE
-    best_model_save_path = os.path.join(conf.MODEL_CHKPT_SAVE_DIR, "multimodal_lbl_densenet.pt")
+    best_model_save_path = os.path.join(conf.MODEL_CHKPT_SAVE_DIR, config['checkpoint']['model_save_name'])
 
     from utils.lr_finder import LRFinder
 
@@ -544,75 +632,75 @@ def main():
     #     save_path  = os.path.join(save_path, "lr_finder.png"),
     # )
 
-    # ------------------------------------- TRAINING START ----------------------------------------------------------
-    logger.info("======= " + "Starting Training " + ("=" * 60))
+    # # ------------------------------------- TRAINING START ----------------------------------------------------------
+    # logger.info("======= " + "Starting Training " + ("=" * 60))
     
-    for epoch in range(conf.EPOCHS):
-        if epoch > epoch_by_warmup:
-            warmup_scheduler = None
+    # for epoch in range(conf.EPOCHS):
+    #     if epoch > epoch_by_warmup:
+    #         warmup_scheduler = None
         
-        train_nll, train_ppl = train_epoch(model, train_dl, optimizer, criterion, DEVICE, warmup_scheduler=warmup_scheduler, clip_grad=conf.GRAD_CLIP)
-        valid_nll,  valid_ppl  = evaluate(model,valid_dl,criterion,DEVICE)
+    #     train_nll, train_ppl = train_epoch(model, train_dl, optimizer, criterion, DEVICE, warmup_scheduler=warmup_scheduler, clip_grad=conf.GRAD_CLIP)
+    #     valid_nll,  valid_ppl  = evaluate(model,valid_dl,criterion,DEVICE)
         
-        # Early Stopping
-        if valid_nll < best_valid_loss:
-            best_valid_loss  = valid_nll
-            patience_counter = 0
+    #     # Early Stopping
+    #     if valid_nll < best_valid_loss:
+    #         best_valid_loss  = valid_nll
+    #         patience_counter = 0
 
 
-            torch.save({
-                'model_state_dict': model.state_dict(),
-                'hyperparams': {
-                    # Core
-                    'd_model':            conf.D_MODEL,
-                    'dropout':            conf.DROPOUT,
-                    # CNN encoder
-                    'cnn_backbone':       conf.IMG_ENC_BACKBONE,
-                    'cnn_freeze_layers':  conf.IMG_ENC_FREEZE_LAYER,
-                    # Text encoder
-                    'bert_model':         conf.BERT_MODEL,
-                    'bert_freeze_layers': conf.BERT_FREEZE_LAYER,
-                    'bert_max_length':    conf.BERT_MAX_LENGTH,
-                    # Fusion
-                    'fusion_heads':       conf.FUSION_HEADS,
-                    'fusion_ff_dim':      conf.FUSION_FF_DIM,
-                    # Decoder
-                    'vocab_size':         conf.VOCAB_SIZE,
-                    'decoder_layers':     conf.DECODER_LAYERS,
-                    'decoder_heads':      conf.DECODER_N_HEADS,
-                    'decoder_ff_dim':     conf.DECODER_FF_DIM,
-                    'decoder_max_len':    conf.DECODER_MAX_LEN,
-                    'pad_id':             conf.PAD_ID,
-                },
-                'optimizer_state_dict': optimizer.state_dict(),
-                'epoch':                epoch,
-                'valid_loss':           best_valid_loss,
-            }, best_model_save_path)
+    #         torch.save({
+    #             'model_state_dict': model.state_dict(),
+    #             'hyperparams': {
+    #                 # Core
+    #                 'd_model':            conf.D_MODEL,
+    #                 'dropout':            conf.DROPOUT,
+    #                 # CNN encoder
+    #                 'cnn_backbone':       conf.IMG_ENC_BACKBONE,
+    #                 'cnn_freeze_layers':  conf.IMG_ENC_FREEZE_LAYER,
+    #                 # Text encoder
+    #                 'bert_model':         conf.BERT_MODEL,
+    #                 'bert_freeze_layers': conf.BERT_FREEZE_LAYER,
+    #                 'bert_max_length':    conf.BERT_MAX_LENGTH,
+    #                 # Fusion
+    #                 'fusion_heads':       conf.FUSION_HEADS,
+    #                 'fusion_ff_dim':      conf.FUSION_FF_DIM,
+    #                 # Decoder
+    #                 'vocab_size':         conf.VOCAB_SIZE,
+    #                 'decoder_layers':     conf.DECODER_LAYERS,
+    #                 'decoder_heads':      conf.DECODER_N_HEADS,
+    #                 'decoder_ff_dim':     conf.DECODER_FF_DIM,
+    #                 'decoder_max_len':    conf.DECODER_MAX_LEN,
+    #                 'pad_id':             conf.PAD_ID,
+    #             },
+    #             'optimizer_state_dict': optimizer.state_dict(),
+    #             'epoch':                epoch,
+    #             'valid_loss':           best_valid_loss,
+    #         }, best_model_save_path)
 
-            print(f"    At epoch: {epoch+1}, best model saved at {best_model_save_path}")
-        else:
-            patience_counter += 1
+    #         print(f"    At epoch: {epoch+1}, best model saved at {best_model_save_path}")
+    #     else:
+    #         patience_counter += 1
 
-        if patience_counter >= patience:
-            print(f"\nEarly stopping triggered after {epoch+1} epochs")
-            break
+    #     if patience_counter >= patience:
+    #         print(f"\nEarly stopping triggered after {epoch+1} epochs")
+    #         break
         
-        if epoch > epoch_by_warmup:
-            cosine_scheduler.step()
+    #     if epoch > epoch_by_warmup:
+    #         cosine_scheduler.step()
             
-        # Metricss
-        tl_list.append(train_nll); vl_list.append(valid_nll)
-        tp_list.append(train_ppl);  vp_list.append(valid_ppl)
+    #     # Metricss
+    #     tl_list.append(train_nll); vl_list.append(valid_nll)
+    #     tp_list.append(train_ppl);  vp_list.append(valid_ppl)
 
-        logger.info(
-            "Epoch %d/%d | Train Loss=%.4f | Train PPL=%.2f | Valid Loss=%.4f | Valid PPL=%.2f",
-            epoch + 1,
-            conf.EPOCHS,
-            train_nll,
-            train_ppl,
-            valid_nll,
-            valid_ppl,
-        )
+    #     logger.info(
+    #         "Epoch %d/%d | Train Loss=%.4f | Train PPL=%.2f | Valid Loss=%.4f | Valid PPL=%.2f",
+    #         epoch + 1,
+    #         conf.EPOCHS,
+    #         train_nll,
+    #         train_ppl,
+    #         valid_nll,
+    #         valid_ppl,
+    #     )
         
     # # ── Evaluation Test & Valid Dataset ─────────────────────────────────────────────────────────────────────
     logger.info("======= " + "Starting Evaluating " + ("=" * 60))
@@ -698,7 +786,7 @@ def main():
     for handler in logger.handlers:
         handler.flush()
     
-    temp_log = "/home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/logs/multimodal_label_train.log"
+    temp_log = "/home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/logs/multimodal_label_train2.log"
     final_log = os.path.join(save_path, "train.log")
     if os.path.exists(temp_log):
         shutil.copy(temp_log, final_log)

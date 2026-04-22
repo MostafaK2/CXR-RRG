@@ -32,7 +32,7 @@ CHEXBERT_LABELS = [
 
 CLASS_MAPPING = {0: "Blank", 1: "Positive", 2: "Negative", 3: "Uncertain"}
                     #        Baseline                Main
-MODEL_CLASS_NAMES = ["ChestXrayReportGenerator", "ChestXrayMRG"]
+MODEL_CLASS_NAMES = ["ChestXrayReportGenerator", "ChestXrayMRG", "Multimodal_Memory"]
 
 
 # -------------------------------- Evaluation BLEU & METEOR helpers -------------------------------------
@@ -211,6 +211,8 @@ def generate_report(model, sample, tokenizer, word2idx, config, device="cuda"):
     modelclassname = model.__class__.__name__
     if MODEL_CLASS_NAMES[0] == modelclassname: image, _, _ = sample; max_len = config["model"]["max_len"]
     elif MODEL_CLASS_NAMES[1] == modelclassname: image, _, _, clinical_hist, _ = sample; max_len = config["model"]["decoder_max_len"]
+    elif MODEL_CLASS_NAMES[2] == modelclassname: image, _, _, clinical_hist, _ = sample; max_len = config["model"]["decoder_max_len"]
+
     ## \END MODULAR ACROSS DIFFERENT CLASSES CODE END
 
     image = image.to(device).unsqueeze(0) # (1, 3, 224, 224)
@@ -226,6 +228,7 @@ def generate_report(model, sample, tokenizer, word2idx, config, device="cuda"):
         ## \START MODULAR ACROSS DIFFERENT CLASSES CODE (LOGITS)
         if MODEL_CLASS_NAMES[0] == modelclassname: logits = model(image, src_tensor)
         elif MODEL_CLASS_NAMES[1] == modelclassname: logits = model(image, clinical_hist, src_tensor)
+        elif MODEL_CLASS_NAMES[2] == modelclassname: logits = model(image, clinical_hist, src_tensor)
         ## \END MODULAR ACROSS DIFFERENT CLASSES CODE
         
         # Get next token (last position in sequence)

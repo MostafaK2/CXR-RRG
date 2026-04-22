@@ -1,8 +1,9 @@
 checkpoint:
   model_checkpoint_path: /home/public/mkamal/checkpoints
+  model_save_name: multimodal_lbl_densenet.pt
   resume: null
   save_best_only: true
-  save_dir: results
+  save_dir: results_only_multimodal
 data:
   csv_file: /home/public/mkamal/dataset/filtered_data/train/train_cleaned.csv
   h5_file: /home/public/mkamal/dataset/filtered_data/train/train.h5

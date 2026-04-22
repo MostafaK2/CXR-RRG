@@ -1,6 +1,7 @@
 # configs/captioner-conf/main.yml
 checkpoint:
-  save_dir: results
+  save_dir: results_focal
+  model_save_name: multimodal_lbl_densenet_focalloss.pt
   save_best_only: true
   resume: null
   model_checkpoint_path: "/home/public/mkamal/checkpoints" 

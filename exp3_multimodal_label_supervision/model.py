@@ -14,6 +14,7 @@ from exp2_multimodal.fusion_module import CrossAttentionFusion
 from exp2_multimodal.decoder import RRGDecoder
 
 
+
 class Multimodal_Memory(nn.Module):
     def __init__(
             self, 
@@ -28,7 +29,6 @@ class Multimodal_Memory(nn.Module):
             # Fusion
             fusion_heads: int = 8,
             fusion_ff_dim: int = 768,
-
 
             # Decoder
             vocab_size:        int   = 10000, # will be set
