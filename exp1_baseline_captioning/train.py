@@ -408,60 +408,60 @@ def main():
     best_model_save_path = os.path.join(conf.MODEL_CHKPT_SAVE_DIR, "resnet18-trans.pt")
 
     # ------------------------------------- TRAINING START ----------------------------------------------------------
-    # logger.info("======= " + "Starting Training " + ("=" * 60))
+    logger.info("======= " + "Starting Training " + ("=" * 60))
 
-    # for epoch in range(conf.EPOCHS):
-    #     if epoch > epoch_by_warmup:
-    #         warmup_scheduler = None
+    for epoch in range(conf.EPOCHS):
+        if epoch > epoch_by_warmup:
+            warmup_scheduler = None
         
-    #     train_nll, train_ppl = train_epoch(model, train_dl, optimizer, criterion, DEVICE, warmup_scheduler=warmup_scheduler, clip_grad=conf.GRAD_CLIP)
-    #     valid_nll,  valid_ppl  = evaluate(model,valid_dl,criterion,DEVICE)
+        train_nll, train_ppl = train_epoch(model, train_dl, optimizer, criterion, DEVICE, warmup_scheduler=warmup_scheduler, clip_grad=conf.GRAD_CLIP)
+        valid_nll,  valid_ppl  = evaluate(model,valid_dl,criterion,DEVICE)
         
-    #     # Early Stopping
-    #     if valid_nll < best_valid_loss:
-    #         best_valid_loss  = valid_nll
-    #         patience_counter = 0
-    #         torch.save({
-    #             'model_state_dict': model.state_dict(),
-    #             'hyperparams': {
-    #                 'vocab_size':conf.VOCAB_SIZE,
-    #                 'd_model': conf.D_MODEL,
-    #                 'n_heads': conf.N_HEADS,
-    #                 'n_layers': conf.N_LAYERS,
-    #                 'max_len': conf.MAX_LEN,
-    #                 'd_ff': conf.D_FF,
-    #                 'dropout': conf.DROPOUT,
-    #                 'pad_id': conf.PAD_ID,
-    #                 'freeze_enc_layers': conf.FREEZE_ENC_LAYERS
-    #             },
-    #             'optimizer_state_dict': optimizer.state_dict(),
-    #             'epoch': epoch,
-    #             'valid_loss': best_valid_loss,
-    #         }, best_model_save_path)
-    #         print(f"    At epoch: {epoch+1}, best model saved at {best_model_save_path}")
-    #     else:
-    #         patience_counter += 1
+        # Early Stopping
+        if valid_nll < best_valid_loss:
+            best_valid_loss  = valid_nll
+            patience_counter = 0
+            torch.save({
+                'model_state_dict': model.state_dict(),
+                'hyperparams': {
+                    'vocab_size':conf.VOCAB_SIZE,
+                    'd_model': conf.D_MODEL,
+                    'n_heads': conf.N_HEADS,
+                    'n_layers': conf.N_LAYERS,
+                    'max_len': conf.MAX_LEN,
+                    'd_ff': conf.D_FF,
+                    'dropout': conf.DROPOUT,
+                    'pad_id': conf.PAD_ID,
+                    'freeze_enc_layers': conf.FREEZE_ENC_LAYERS
+                },
+                'optimizer_state_dict': optimizer.state_dict(),
+                'epoch': epoch,
+                'valid_loss': best_valid_loss,
+            }, best_model_save_path)
+            print(f"    At epoch: {epoch+1}, best model saved at {best_model_save_path}")
+        else:
+            patience_counter += 1
 
-    #     if patience_counter >= patience:
-    #         print(f"\nEarly stopping triggered after {epoch+1} epochs")
-    #         break
+        if patience_counter >= patience:
+            print(f"\nEarly stopping triggered after {epoch+1} epochs")
+            break
         
-    #     if epoch > epoch_by_warmup:
-    #         cosine_scheduler.step()
+        if epoch > epoch_by_warmup:
+            cosine_scheduler.step()
             
-    #     # Metricss
-    #     tl_list.append(train_nll); vl_list.append(valid_nll)
-    #     tp_list.append(train_ppl);  vp_list.append(valid_ppl)
+        # Metricss
+        tl_list.append(train_nll); vl_list.append(valid_nll)
+        tp_list.append(train_ppl);  vp_list.append(valid_ppl)
 
-    #     logger.info(
-    #         "Epoch %d/%d | Train Loss=%.4f | Train PPL=%.2f | Valid Loss=%.4f | Valid PPL=%.2f",
-    #         epoch + 1,
-    #         conf.EPOCHS,
-    #         train_nll,
-    #         train_ppl,
-    #         valid_nll,
-    #         valid_ppl,
-    #     )
+        logger.info(
+            "Epoch %d/%d | Train Loss=%.4f | Train PPL=%.2f | Valid Loss=%.4f | Valid PPL=%.2f",
+            epoch + 1,
+            conf.EPOCHS,
+            train_nll,
+            train_ppl,
+            valid_nll,
+            valid_ppl,
+        )
     
     
     # ── Evaluation Test & Valid Dataset ─────────────────────────────────────────────────────────────────────
@@ -483,7 +483,7 @@ def main():
         word2idx,
         config, 
         DEVICE, 
-        num_samples=10, # Set to e.g. 500 for faster testing
+        num_samples=None, # Set to e.g. 500 for faster testing
         labels_path=config["eval"]["reports_label_path"] # switch to reports_label_path
     )
 

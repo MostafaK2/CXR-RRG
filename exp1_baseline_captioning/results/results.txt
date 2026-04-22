@@ -6,7 +6,7 @@ Best Validation Loss: inf
 Model Class: ChestXrayReportGenerator
 
 ---- CONFIG ----
-<__main__.Config object at 0x796540b3d580>
+<__main__.Config object at 0x7ef92eefd580>
 
 ---- VALIDATION METRICS ----
 BLEU Scores: [0.20983847775161596, 0.10082493232712106, 0.05844176813588996, 0.033990382524136345]
