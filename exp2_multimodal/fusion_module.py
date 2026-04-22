@@ -70,35 +70,40 @@ class CrossAttentionFusion(nn.Module):
         clincal_mask: torch.Tensor # True = ignore pos
         ) -> torch.Tensor:
 
-        # pooling clin text for gate
-        pooled_clin = self._masked_pool(clincal_text_token, clincal_mask)
-        gate = torch.sigmoid(self.gate_linear(pooled_clin))
+        # # pooling clin text for gate
+        # pooled_clin = self._masked_pool(clincal_text_token, clincal_mask)
+        # gate = torch.sigmoid(self.gate_linear(pooled_clin))
 
-        #pre norms
+        # HARD GATE
+        seq_len = (~clincal_mask).sum(dim=1)
+        gate = (seq_len > 2).float().unsqueeze(1)
+
+        #-------- pre norms -------------------
         norm_img = self.norm_img(img_tokens)    # [B, 49, d_model]
         norm_clin = self.norm_clin(clincal_text_token)
 
-
+        # ------- attention pass 1 ------------------------------
         # Image tokens (Q) and Text tokens (K, V): Saying how the image 
         # "what clinical history are relevant"
         cross_out, attn_weight = self.cross_attn(
             query = norm_img, 
             key = norm_clin,
             value = norm_clin,
+            key_padding_mask = clincal_mask
         )
 
-        # residual + gated
-        Z = img_tokens + (gate.unsqueeze(1) * self.dropout(cross_out))
+        # # residual + gated
+        # Z = img_tokens + (gate.unsqueeze(1) * self.dropout(cross_out))   # [B, 49, d_model]
 
-        # "given what I know clinically, look again at the image"
+        # "clinically informed cross out tells image where to look"
         cross_attn2, attn_weights = self.cross_attn2(
             query=img_tokens,
-            key = Z,
+            key = cross_out,
             value = img_tokens
         )
-        Z = Z + self.dropout(cross_attn2)
 
-        Z = Z + self.ffn(self.norm_ff(Z))
+        print(gate)
+        Z = img_tokens + gate.unsqueeze(1) * (cross_out + cross_attn2)
 
         return Z, attn_weight # Z vector [B, 49, d_model]
 
@@ -126,7 +131,7 @@ if __name__ == "__main__":
 
     # Simulate padding mask — last 5 tokens are padding for all samples
     clin_mask   = torch.zeros(B, N_txt, dtype=torch.bool).to(device)
-    clin_mask[:, -3:] = True
+    clin_mask[:, -4:] = True
 
     out, attn = fusion(img_tokens, clin_tokens, clin_mask)
 

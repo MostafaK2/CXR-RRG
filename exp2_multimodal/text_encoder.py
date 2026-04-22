@@ -61,18 +61,18 @@ class ClinicalTextEncoder(nn.Module):
 
         return token_embeds, attn_mask
 
-# if __name__ == "__main__":
-#     device  = torch.device("cuda")
-#     encoder = ClinicalTextEncoder(
-#         model_name="emilyalsentzer/Bio_ClinicalBERT", 
-#         d_model=512,
-#         freeze_layers=6,
-#         dropout=0.2,
-#         max_length=128
-#     ).to(device)
+if __name__ == "__main__":
+    device  = torch.device("cuda")
+    encoder = ClinicalTextEncoder(
+        model_name="emilyalsentzer/Bio_ClinicalBERT", 
+        d_model=512,
+        freeze_layers=6,
+        dropout=0.2,
+        max_length=128
+    ).to(device)
 
-#     out, attn_mask = encoder(["", "", "Clinical text"], device)
+    out, attn_mask = encoder(["", "", "Clinical text"], device)
 
-#     print(out.shape)
-#     print(attn_mask)
+    print(out.shape)
+    print(attn_mask)
 

@@ -29,11 +29,11 @@ from tokenizers.models import BPE
 from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import Whitespace
 
-from dataset import load_and_split, CXRDataset
+from exp2_multimodal.dataset import load_and_split, CXRDataset
 
 import yaml
 
-from ChestXrayMRG import ChestXrayMRG
+from model import Multimodal_Pathology_Memory
 
 from utils.logginghelpers import log_chexbert_f1_summary, save_training_results
 
@@ -47,7 +47,7 @@ logging.basicConfig(
     format="%(asctime)s | [%(levelname)s] | %(message)s",
     handlers=[
         logging.StreamHandler(),                 # print to console
-        logging.FileHandler("logs/multimodal_train.log", mode='w')    # save to file
+        logging.FileHandler("logs/multimodal_label_train.log", mode='w')    # save to file
     ]
 )
 logger = logging.getLogger()
@@ -130,7 +130,7 @@ def override_config(args, config):
     return config
 args = get_args()
 
-DEFAULT = os.path.join(_find_root(), 'configs', 'multimodal_conf', 'main.yml')
+DEFAULT = os.path.join(_find_root(), 'configs', 'multimodal_label_conf', 'main.yml')
 config  = load_config(args.config, default_config=DEFAULT, logger=logger)
 config = override_config(args,config)
 
@@ -321,7 +321,6 @@ def evaluate(model, dataloader, criterion, device):
 # ---------------- MODEL CONFIGURATIONS -------------------
 # Creating a config class for better readibility in the code
 class Config:
-
     DEVICE = DEVICE
 
     #  ------ Datasets Paths ------------------------------------------
@@ -698,7 +697,7 @@ def main():
     for handler in logger.handlers:
         handler.flush()
     
-    temp_log = "/home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/logs/multimodal_train.log"
+    temp_log = "/home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/logs/multimodal_label_train.log"
     final_log = os.path.join(save_path, "train.log")
     if os.path.exists(temp_log):
         shutil.copy(temp_log, final_log)
