@@ -1,5 +1,6 @@
 checkpoint:
   model_checkpoint_path: /home/public/mkamal/checkpoints
+  model_save_name: resnet18-trans.pt
   resume: null
   save_best_only: true
   save_dir: results
@@ -9,7 +10,8 @@ data:
   max_len: 200
   min_freq: 3
   num_workers: 4
-  testval_size: 0.3
+  test_sz: 0.1
+  valid_sz: 0.1
 eval:
   chestXbertModelWeights: /home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/utils/chexbert.pth
   findings_label_path: /home/public/mkamal/dataset/filtered_data/finding_labels.csv
@@ -26,8 +28,8 @@ model:
   freeze_enc_layers: 6
   max_len: 200
   n_heads: 8
-  n_layers: 8
-  vocab_size: 15711
+  n_layers: 6
+  vocab_size: 16000
 reproducibility:
   seed: 42
 special_tokens:
@@ -40,10 +42,10 @@ special_tokens:
 training:
   batch_size: 64
   device: cuda
-  epochs: 30
+  epochs: 25
   grad_clip: 1.0
   label_smoothing: 0
-  learning_rate: 1e-4
-  patience: 5
+  learning_rate: 0.000314
+  patience: 4
   warmup_steps: 1000
   weight_decay: 1e-4

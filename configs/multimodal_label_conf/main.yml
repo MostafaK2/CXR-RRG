@@ -1,7 +1,7 @@
 # configs/captioner-conf/main.yml
 checkpoint:
   save_dir: results_focal
-  model_save_name: multimodal_lbl_densenet_focalloss.pt
+  model_save_name: multimodal_lbl_densenet.pt
   save_best_only: true
   resume: null
   model_checkpoint_path: "/home/public/mkamal/checkpoints" 
@@ -16,17 +16,17 @@ data:
   test_sz: 0.0001
 
 model:
-  vocab_size: 20000
+  vocab_size: 15000
   d_model: 512
   
   decoder_n_heads: 8
-  decoder_ff_dim: 768
+  decoder_ff_dim: 256
   decoder_max_len: 256
   decoder_layers: 6
   pad_id: 0
   
   fusion_heads: 8
-  fusion_ff_dim: 768
+  fusion_ff_dim: 256
 
   img_enc_backbone: "densenet121"
   img_enc_freeze_layer: 4    # unfreeze 8 layers
@@ -35,16 +35,16 @@ model:
   bert_freeze_layer: 12   # Complete froze 12    
   bert_max_length: 128
 
-  dropout: 0.1
+  dropout: 0.2
 
 training:
   epochs: 10
   batch_size: 64
   learning_rate: 3.14e-4
-  weight_decay: 1e-4
+  weight_decay: 1e-3
   grad_clip: 1.0
   warmup_steps: 1300
-  patience: 5
+  patience: 3
   label_smoothing: 0
   device: cuda
 

@@ -15,6 +15,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR
+import torch.nn.functional as F
 
 import torchvision.transforms as transforms
 import pandas as pd
@@ -29,15 +30,17 @@ from tokenizers.models import BPE
 from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import Whitespace
 
-from dataset import load_and_split, CXRDataset
+from exp2_multimodal.dataset import load_and_split, CXRDataset
 
 import yaml
 
-from ChestXrayMRG import ChestXrayMRG
+from model import Multimodal_Memory
 
 from utils.logginghelpers import log_chexbert_f1_summary, save_training_results
 
 import matplotlib.pyplot as plt
+
+
 
 # ----------------------- LOGGING ---------------------
 
@@ -47,7 +50,7 @@ logging.basicConfig(
     format="%(asctime)s | [%(levelname)s] | %(message)s",
     handlers=[
         logging.StreamHandler(),                 # print to console
-        logging.FileHandler("logs/multimodal_train.log", mode='w')    # save to file
+        logging.FileHandler("logs/multimodal_memory_train.log", mode='w')    # save to file
     ]
 )
 logger = logging.getLogger()
@@ -130,9 +133,11 @@ def override_config(args, config):
     return config
 args = get_args()
 
-DEFAULT = os.path.join(_find_root(), 'configs', 'multimodal_conf', 'main.yml')
+DEFAULT = os.path.join(_find_root(), 'configs', 'multimodal_memory', 'main.yml')
 config  = load_config(args.config, default_config=DEFAULT, logger=logger)
 config = override_config(args,config)
+
+
 
 # ---------------- Device ----------------  COPY THIS
 def pick_device():
@@ -266,18 +271,27 @@ def reorder_labels_df(path: str) -> pd.DataFrame:
 
 # Training Helpers
 # ----------------- Training Helper functions ------------------- 
-def train_epoch(model, dataloader, optimizer, criterion, device,  clip_grad=1.0, warmup_scheduler=None):
+def train_epoch(model, dataloader, optimizer, criterion, device,  lambda_cls=0.1, clip_grad=1.0, warmup_scheduler=None):
     model.train()
-    total_loss = 0.0
+    total_loss = total_gen = total_cls = 0.0
     for img, src, tgt, clincal_text, labels in tqdm.tqdm(dataloader,"train"):
         img, src, tgt = img.to(device), src.to(device), tgt.to(device)
         labels = labels.to(device)
+
         optimizer.zero_grad()
 
-        logits = model(img, clincal_text, src)  # (B, T, V)
+        # Forward
+        logits, cls_logits, _ = model(img, clincal_text, src)  # (B, T, V)
         B, T, V = logits.shape
 
-        loss = criterion(logits.view(B * T, V), tgt.view(B * T))
+        # generaton CE loss
+        gen_loss = criterion(logits.view(B * T, V), tgt.view(B * T))
+
+        # classification loss
+        cls_loss = F.binary_cross_entropy_with_logits(cls_logits, labels) 
+
+        # combined 
+        loss = gen_loss + cls_loss
         loss.backward()
 
         if clip_grad is not None:
@@ -286,43 +300,66 @@ def train_epoch(model, dataloader, optimizer, criterion, device,  clip_grad=1.0,
         optimizer.step()
 
         total_loss += loss.item()
+        total_gen  += gen_loss.item()
+        total_cls  += cls_loss.item()
         
         if warmup_scheduler is not None:
             warmup_scheduler.step()
             
     avg_loss = total_loss / len(dataloader)
 
-    nll = float(avg_loss)
-    ppl = float(math.exp(nll))
-    return nll, ppl
+    n        = len(dataloader)
+    avg_loss = total_loss / n
+    return (
+        avg_loss,               # total NLL
+        math.exp(avg_loss),     # perplexity
+        total_gen / n,          # gen loss
+        total_cls / n,          # cls loss
+    )
 
 @torch.no_grad()
-def evaluate(model, dataloader, criterion, device):
+def evaluate(model, dataloader, criterion, device, lambda_cls=0.1):
     model.eval()
-    total_loss = 0.0
+    total_loss = total_gen = total_cls = 0.0
     
     with torch.no_grad():
         for img, src, tgt, clinical_text, labels in tqdm.tqdm(dataloader, "Evaluating"):
             img, src, tgt = img.to(device), src.to(device), tgt.to(device)
             labels = labels.to(device)
 
-            logits = model(img, clinical_text, src)  # (B, T, V)
+            logits, cls_logits, _ = model(img, clinical_text, src)  # (B, T, V)
             B, T, V = logits.shape
             
-            loss = criterion(logits.view(B * T, V), tgt.view(B * T))
-            
-            total_loss += loss.item()
+            gen_loss = criterion(logits.view(B * T, V), tgt.view(B * T))
+            cls_loss = F.binary_cross_entropy_with_logits(cls_logits, labels)
+            loss     = gen_loss + cls_loss
     
-    nll = total_loss / len(dataloader)
-    ppl = math.exp(nll)
-    return nll, ppl
+            total_loss += loss.item()
+            total_gen  += gen_loss.item()
+            total_cls  += cls_loss.item()
+            
+    
+    n        = len(dataloader)
+    avg_loss = total_loss / n
+    return (
+        avg_loss,
+        math.exp(avg_loss),
+        total_gen / n,
+        total_cls / n,
+    )
+
+
 
 
 # ---------------- MODEL CONFIGURATIONS -------------------
 # Creating a config class for better readibility in the code
 class Config:
-
     DEVICE = DEVICE
+
+    # Paths
+    H5_PATH  = config["data"]["h5_file"]
+    CSV_PATH = config["data"]["csv_file"]
+    MIN_FREQ = config['data']['min_freq']
 
     #  ------ Datasets Paths ------------------------------------------
     H5_PATH = config["data"]["h5_file"]
@@ -362,11 +399,17 @@ class Config:
     BERT_MODEL = str(config['model']['bert_model'])
     BERT_FREEZE_LAYER = int(config['model']['bert_freeze_layer'])
     BERT_MAX_LENGTH = int(config['model']['bert_max_length'])
+
+        # Memory bank params
+    N_SLOTS        = int(config['model']['n_slots'])
+    N_LABELS       = int(config['model']['n_labels'])
+    MEMORY_N_HEADS = int(config['model']['memory_n_heads'])
+    LAMBDA_CLS     = float(config['training']['lambda_cls'])
      
-     # Dropout
+        # Dropout
     DROPOUT = float(config['model']['dropout'])
 
-    # --------- Hyperparameters -----------------------------
+    # --------- Training -----------------------------
     EPOCHS = int(config['training']['epochs'])
     BATCH_SIZE = int(config['training']['batch_size'])
     LR = float(config['training']['learning_rate'])
@@ -375,7 +418,6 @@ class Config:
     PATIENCE = int(config['training']['patience'])
     LABEL_SMOOTHING = float(config['training']['label_smoothing'])
     
-
     # scheduler
     WARMUP_STEPS = int(config['training']['warmup_steps'])
 
@@ -405,7 +447,7 @@ def main():
 
     # - - - - - -  - - - - - - - - - END - - - -- -- - - - -- - - -- - --
 
-    model = ChestXrayMRG(
+    model = Multimodal_Memory(
         d_model=conf.D_MODEL,
         # Encoder
         cnn_backbone=conf.IMG_ENC_BACKBONE,
@@ -424,12 +466,19 @@ def main():
         decoder_max_len = conf.DECODER_MAX_LEN,
         pad_id = conf.PAD_ID,
 
+        n_slots            = conf.N_SLOTS,          
+        n_labels           = conf.N_LABELS,        
+        memory_n_heads     = conf.MEMORY_N_HEADS, 
+
         dropout = conf.DROPOUT
     )
     model = model.to(conf.DEVICE)
 
     optimizer = AdamW(model.parameters(), lr=conf.LR, weight_decay=conf.WEIGHT_DECAY)
+
+    # CE Loss 
     criterion = nn.CrossEntropyLoss(ignore_index=conf.PAD_ID, label_smoothing=conf.LABEL_SMOOTHING)
+
 
     # Parameter Calculation
     total_params     = sum(p.numel() for p in model.parameters())
@@ -452,52 +501,24 @@ def main():
     ## CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED
     label_df = reorder_labels_df(config['eval']['reports_label_path'])
 
-    # Datasets
-    train_ds = CXRDataset(
-        df_reports = train_df,
-        df_labels  = label_df, 
-        h5_path    = conf.H5_PATH, 
-        vocab      = word2idx, 
-        bos        = conf.BOS, 
-        eos        = conf.EOS, 
-        unk        = conf.UNK,
-        finding    = conf.FINDING,
-        impression = conf.IMPRESSION,
-        decoder_max_len = conf.DECODER_MAX_LEN, 
-        tokenizer  = tokenizer, 
-        transform  = imagenet_transform
+    ds_kwargs = dict(
+        df_labels       = label_df,
+        h5_path         = conf.H5_PATH,
+        vocab           = word2idx,
+        bos             = conf.BOS,
+        eos             = conf.EOS,
+        unk             = conf.UNK,
+        finding         = conf.FINDING,
+        impression      = conf.IMPRESSION,
+        decoder_max_len = conf.DECODER_MAX_LEN,
+        tokenizer       = tokenizer,
+        transform       = imagenet_transform,
     )
 
-    valid_ds = CXRDataset(
-        df_reports = valid_df,
-        df_labels  = label_df, 
-        h5_path    = conf.H5_PATH, 
-        vocab      = word2idx, 
-        bos        = conf.BOS, 
-        eos        = conf.EOS, 
-        unk        = conf.UNK,
-        finding    = conf.FINDING,
-        impression = conf.IMPRESSION, 
-        decoder_max_len = conf.DECODER_MAX_LEN,  
-        tokenizer  = tokenizer, 
-        transform  = imagenet_transform
-    )
+    train_ds = CXRDataset(df_reports=train_df, **ds_kwargs)
+    valid_ds = CXRDataset(df_reports=valid_df, **ds_kwargs)
+    test_ds  = CXRDataset(df_reports=test_df,  **ds_kwargs)
 
-    test_ds = CXRDataset(
-        df_reports = test_df,
-        df_labels  = label_df, 
-        h5_path    = conf.H5_PATH, 
-        vocab      = word2idx, 
-        bos        = conf.BOS, 
-        eos        = conf.EOS, 
-        unk        = conf.UNK, 
-        finding    = conf.FINDING,
-        impression = conf.IMPRESSION,
-        decoder_max_len = conf.DECODER_MAX_LEN,  
-        tokenizer  = tokenizer, 
-        transform  = imagenet_transform
-    )
-    
     # Dataloaders
     train_dl = DataLoader(train_ds, batch_size=conf.BATCH_SIZE, shuffle=True, collate_fn=collate_fn, num_workers=8)
     valid_dl = DataLoader(valid_ds, batch_size=conf.BATCH_SIZE, shuffle=False, collate_fn=collate_fn, num_workers=8)
@@ -516,20 +537,22 @@ def main():
     remaining_epochs = conf.EPOCHS - (epoch_by_warmup)
     cosine_scheduler = CosineAnnealingLR(optimizer, T_max=remaining_epochs)
 
-    # ----------------  Scheduler End  -----------------
-    # Loss Curve lists
-    tl_list, vl_list = [], []
-    tp_list, vp_list = [], []
-
-    # Stop loss 
+    # ── Training state ────────────────────────────────────────────────────────
     best_valid_loss  = float("inf")
     patience_counter = 0
     patience = conf.PATIENCE
-    best_model_save_path = os.path.join(conf.MODEL_CHKPT_SAVE_DIR, "multimodal-only-res50.pt")
 
-    # from utils.lr_finder import LRFinder
+    tl_list = []; vl_list = []
+    tp_list = []; vp_list = []
+ 
+    best_model_save_path = os.path.join(
+        conf.MODEL_CHKPT_SAVE_DIR,
+        config['checkpoint']['model_save_name'],
+    )
 
+    
     # # ── LR Finder — run once, then comment out ───────────────────────────────
+    # from utils.lr_finder import LRFinder
     # finder = LRFinder(
     #     model     = model,
     #     optimizer = optimizer,
@@ -545,82 +568,93 @@ def main():
     #     save_path  = os.path.join(save_path, "lr_finder.png"),
     # )
 
-    # # ------------------------------------- TRAINING START ----------------------------------------------------------
-    # logger.info("======= " + "Starting Training " + ("=" * 60))
+    # ------------------------------------- TRAINING START ----------------------------------------------------------
+    logger.info("======= " + "Starting Training " + ("=" * 60))
     
-    # for epoch in range(conf.EPOCHS):
-    #     if epoch > epoch_by_warmup:
-    #         warmup_scheduler = None
+    for epoch in range(conf.EPOCHS):
+        if epoch > epoch_by_warmup:
+            warmup_scheduler = None
         
-    #     train_nll, train_ppl = train_epoch(model, train_dl, optimizer, criterion, DEVICE, warmup_scheduler=warmup_scheduler, clip_grad=conf.GRAD_CLIP)
-    #     valid_nll,  valid_ppl  = evaluate(model,valid_dl,criterion,DEVICE)
+        train_loss, train_ppl, train_gen, train_cls = train_epoch(model, train_dl, optimizer, criterion, device = DEVICE, lambda_cls=conf.LAMBDA_CLS, warmup_scheduler=warmup_scheduler, clip_grad=conf.GRAD_CLIP)
+        valid_loss, valid_ppl, valid_gen, valid_cls  = evaluate(model,valid_dl,criterion,DEVICE, lambda_cls=conf.LAMBDA_CLS)
         
-    #     # Early Stopping
-    #     if valid_nll < best_valid_loss:
-    #         best_valid_loss  = valid_nll
-    #         patience_counter = 0
+        # Early Stopping
+        if valid_loss < best_valid_loss:
+            best_valid_loss  = valid_loss
+            patience_counter = 0
 
 
-    #         torch.save({
-    #             'model_state_dict': model.state_dict(),
-    #             'hyperparams': {
-    #                 # Core
-    #                 'd_model':            conf.D_MODEL,
-    #                 'dropout':            conf.DROPOUT,
-    #                 # CNN encoder
-    #                 'cnn_backbone':       conf.IMG_ENC_BACKBONE,
-    #                 'cnn_freeze_layers':  conf.IMG_ENC_FREEZE_LAYER,
-    #                 # Text encoder
-    #                 'bert_model':         conf.BERT_MODEL,
-    #                 'bert_freeze_layers': conf.BERT_FREEZE_LAYER,
-    #                 'bert_max_length':    conf.BERT_MAX_LENGTH,
-    #                 # Fusion
-    #                 'fusion_heads':       conf.FUSION_HEADS,
-    #                 'fusion_ff_dim':      conf.FUSION_FF_DIM,
-    #                 # Decoder
-    #                 'vocab_size':         conf.VOCAB_SIZE,
-    #                 'decoder_layers':     conf.DECODER_LAYERS,
-    #                 'decoder_heads':      conf.DECODER_N_HEADS,
-    #                 'decoder_ff_dim':     conf.DECODER_FF_DIM,
-    #                 'decoder_max_len':    conf.DECODER_MAX_LEN,
-    #                 'pad_id':             conf.PAD_ID,
-    #             },
-    #             'optimizer_state_dict': optimizer.state_dict(),
-    #             'epoch':                epoch,
-    #             'valid_loss':           best_valid_loss,
-    #         }, best_model_save_path)
+            torch.save({
+                'model_state_dict': model.state_dict(),
+                'hyperparams': {
+                    # Core
+                    'd_model':            conf.D_MODEL,
+                    'dropout':            conf.DROPOUT,
+                    # CNN encoder
+                    'cnn_backbone':       conf.IMG_ENC_BACKBONE,
+                    'cnn_freeze_layers':  conf.IMG_ENC_FREEZE_LAYER,
+                    # Text encoder
+                    'bert_model':         conf.BERT_MODEL,
+                    'bert_freeze_layers': conf.BERT_FREEZE_LAYER,
+                    'bert_max_length':    conf.BERT_MAX_LENGTH,
+                    # Fusion
+                    'fusion_heads':       conf.FUSION_HEADS,
+                    'fusion_ff_dim':      conf.FUSION_FF_DIM,
+                    # Decoder
+                    'vocab_size':         conf.VOCAB_SIZE,
+                    'decoder_layers':     conf.DECODER_LAYERS,
+                    'decoder_heads':      conf.DECODER_N_HEADS,
+                    'decoder_ff_dim':     conf.DECODER_FF_DIM,
+                    'decoder_max_len':    conf.DECODER_MAX_LEN,
+                    'pad_id':             conf.PAD_ID,
 
-    #         print(f"    At epoch: {epoch+1}, best model saved at {best_model_save_path}")
-    #     else:
-    #         patience_counter += 1
+                    # ── Memory bank hyperparams ────────────────────────────
+                    'n_slots':            conf.N_SLOTS,
+                    'n_labels':           conf.N_LABELS,
+                    'memory_n_heads':     conf.MEMORY_N_HEADS,
+                },
+                'optimizer_state_dict': optimizer.state_dict(),
+                'epoch':                epoch,
+                'valid_loss':           best_valid_loss,
+            }, best_model_save_path)
 
-    #     if patience_counter >= patience:
-    #         print(f"\nEarly stopping triggered after {epoch+1} epochs")
-    #         break
+            print(f"    At epoch: {epoch+1}, best model saved at {best_model_save_path}")
+        else:
+            patience_counter += 1
+
+        if patience_counter >= patience:
+            print(f"\nEarly stopping triggered after {epoch+1} epochs")
+            break
         
-    #     if epoch > epoch_by_warmup:
-    #         cosine_scheduler.step()
+        if epoch > epoch_by_warmup:
+            cosine_scheduler.step()
             
-    #     # Metricss
-    #     tl_list.append(train_nll); vl_list.append(valid_nll)
-    #     tp_list.append(train_ppl);  vp_list.append(valid_ppl)
+        # Metricss
+        tl_list.append(train_loss); vl_list.append(valid_loss)
+        tp_list.append(train_ppl);  vp_list.append(valid_ppl)
 
-    #     logger.info(
-    #         "Epoch %d/%d | Train Loss=%.4f | Train PPL=%.2f | Valid Loss=%.4f | Valid PPL=%.2f",
-    #         epoch + 1,
-    #         conf.EPOCHS,
-    #         train_nll,
-    #         train_ppl,
-    #         valid_nll,
-    #         valid_ppl,
-    #     )
+        logger.info(
+            "Epoch %d/%d | "
+            "Train Loss=%.4f PPL=%.2f GenL=%.4f ClsL=%.4f | "
+            "Valid Loss=%.4f PPL=%.2f GenL=%.4f ClsL=%.4f",
+            epoch + 1, conf.EPOCHS,
+            train_loss, train_ppl, train_gen, train_cls,
+            valid_loss, valid_ppl, valid_gen, valid_cls,
+        )
         
     # # ── Evaluation Test & Valid Dataset ─────────────────────────────────────────────────────────────────────
     logger.info("======= " + "Starting Evaluating " + ("=" * 60))
     
     ckpt = torch.load(best_model_save_path, weights_only=False)
     hp   = ckpt['hyperparams']
-    model = ChestXrayMRG(**hp).to(conf.DEVICE)
+
+    # Sanity check vocab size matches current tokeniser
+    assert hp['vocab_size'] == tokenizer.get_vocab_size(), (
+        f"Vocab mismatch: checkpoint={hp['vocab_size']} "
+        f"tokeniser={tokenizer.get_vocab_size()}"
+    )
+
+    model = Multimodal_Memory(**hp).to(conf.DEVICE)
     model.load_state_dict(ckpt['model_state_dict'])
     logger.info(f"Loaded checkpoint from epoch {ckpt['epoch']+1} with valid loss {ckpt['valid_loss']:.4f}")
 
@@ -634,6 +668,7 @@ def main():
         word2idx,
         config, 
         conf.DEVICE,
+        num_samples=1000,
         labels_path=config["eval"]["reports_label_path"] # switch to reports_label_path
     )
 
@@ -680,7 +715,7 @@ def main():
         valid_chexpert_f1s=chexbert_res_valid,
 
         # Evaluation Metric test
-        test_corpus_bleu = None,
+        test_corpus_bleu = None, 
         test_meteor_score=None,
         test_chexpert_f1s=None,
 
@@ -698,7 +733,7 @@ def main():
     for handler in logger.handlers:
         handler.flush()
     
-    temp_log = "/home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/logs/multimodal_train.log"
+    temp_log = "/home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/logs/multimodal_memory_train.log"
     final_log = os.path.join(save_path, "train.log")
     if os.path.exists(temp_log):
         shutil.copy(temp_log, final_log)

@@ -1,14 +1,10 @@
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-import argparse
-import logging
 import math
 import shutil
-
-from utils.config import load_config, _find_root
-from utils.metrics import evaluate_metric
+import argparse
+import logging
+import random
 
 import torch
 import torch.nn as nn
@@ -18,25 +14,22 @@ from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR
 
 import torchvision.transforms as transforms
 
+import matplotlib.pyplot as plt
 import tqdm
-
-import random
+import yaml
 
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
 from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import Whitespace
 
-from dataset import load_and_split, CXRDataset
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import yaml
-
-from decoder import ChestXrayReportGenerator
-
+from utils.config import load_config, _find_root
+from utils.metrics import evaluate_metric
 from utils.logginghelpers import log_chexbert_f1_summary, save_training_results
-
-import matplotlib.pyplot as plt
-
+from dataset import load_and_split, CXRDataset
+from decoder import ChestXrayReportGenerator
 
 # ----------------------- LOGGING ---------------------
 
@@ -182,7 +175,7 @@ def build_tokenizer(train_df, caption_col, max_len, special_tokens, vocab_size=1
 
     return word2idx, tokenizer
 
-train_df, valid_df, test_df = load_and_split(config["data"]["csv_file"], val_size=0.15, test_size=0.15, seed=SEED, logger=logger)
+train_df, valid_df, test_df = load_and_split(config["data"]["csv_file"], val_size=config["data"]["valid_sz"], test_size=config["data"]["test_sz"], seed=SEED, logger=logger)
 
 word2idx, tokenizer = build_tokenizer(   # just trains the tokenizer
     train_df,
@@ -405,7 +398,7 @@ def main():
     best_valid_loss  = float("inf")
     patience_counter = 0
     patience = conf.PATIENCE
-    best_model_save_path = os.path.join(conf.MODEL_CHKPT_SAVE_DIR, "resnet18-trans.pt")
+    best_model_save_path = os.path.join(conf.MODEL_CHKPT_SAVE_DIR, config["checkpoint"]["model_save_name"])
 
     # ------------------------------------- TRAINING START ----------------------------------------------------------
     logger.info("======= " + "Starting Training " + ("=" * 60))
