@@ -204,7 +204,7 @@ def override_config(args, config):
     return config
 args = get_args()
 
-DEFAULT = os.path.join(_find_root(), 'configs', 'multimodal_label_conf', 'main.yml')
+DEFAULT = os.path.join(_find_root(), 'configs', 'multimodal_swin', 'main.yml')
 config  = load_config(args.config, default_config=DEFAULT, logger=logger)
 config = override_config(args,config)
 
@@ -701,6 +701,28 @@ def main():
     #         valid_nll,
     #         valid_ppl,
     #     )
+
+    # ── Plots ─────────────────────────────────────────────────────────────────────
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 5))
+
+    ax1.plot(tl_list, label='Train Loss', marker='o')
+    ax1.plot(vl_list, label='Valid Loss', marker='s')
+    ax1.set_xlabel('Epoch'); ax1.set_ylabel('Loss')
+    ax1.set_title('Training and Validation Loss', fontweight='bold')
+    ax1.legend(); ax1.grid(True, alpha=0.3)
+
+    ax2.plot(tp_list, label='Train PPL', marker='o')
+    ax2.plot(vp_list, label='Valid PPL', marker='s')
+    ax2.set_xlabel('Epoch'); ax2.set_ylabel('Perplexity')
+    ax2.set_title('Training and Validation Perplexity', fontweight='bold')
+    ax2.legend(); ax2.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(save_path + '/training_curves.png', dpi=150, bbox_inches='tight')
+    plt.show()
+    logger.info("Plots saved in /results/training_curves.png")
+
+    logger.info("Training & Evaluating completed!")
         
     # # ── Evaluation Test & Valid Dataset ─────────────────────────────────────────────────────────────────────
     logger.info("======= " + "Starting Evaluating " + ("=" * 60))
@@ -729,27 +751,6 @@ def main():
     logger.info(f"Validation METEOR score: {avg_valid_meteor}")
     log_chexbert_f1_summary(chexbert_res_valid, logger)
 
-    # ── Plots ─────────────────────────────────────────────────────────────────────
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 5))
-
-    ax1.plot(tl_list, label='Train Loss', marker='o')
-    ax1.plot(vl_list, label='Valid Loss', marker='s')
-    ax1.set_xlabel('Epoch'); ax1.set_ylabel('Loss')
-    ax1.set_title('Training and Validation Loss', fontweight='bold')
-    ax1.legend(); ax1.grid(True, alpha=0.3)
-
-    ax2.plot(tp_list, label='Train PPL', marker='o')
-    ax2.plot(vp_list, label='Valid PPL', marker='s')
-    ax2.set_xlabel('Epoch'); ax2.set_ylabel('Perplexity')
-    ax2.set_title('Training and Validation Perplexity', fontweight='bold')
-    ax2.legend(); ax2.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig(save_path + '/training_curves.png', dpi=150, bbox_inches='tight')
-    plt.show()
-    logger.info("Plots saved in /results/training_curves.png")
-
-    logger.info("Training & Evaluating completed!")
 
     # ---------------------------- Training and Evaluating Complete ------------------------------------------ #
 
@@ -786,7 +787,7 @@ def main():
     for handler in logger.handlers:
         handler.flush()
     
-    temp_log = "/home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/logs/multimodal_label_train2.log"
+    temp_log = "/home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/logs/multimodal_swin_train.log"
     final_log = os.path.join(save_path, "train.log")
     if os.path.exists(temp_log):
         shutil.copy(temp_log, final_log)

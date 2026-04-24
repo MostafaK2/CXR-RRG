@@ -60,3 +60,4 @@ class ClinicalTextEncoder(nn.Module):
 
         return token_embeds, attn_mask
 
+
