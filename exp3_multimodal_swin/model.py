@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from exp2_multimodal.image_encoder import CNNEncoder
+from image_encoder import SwinEncoder
 from exp2_multimodal.text_encoder  import ClinicalTextEncoder
 from exp2_multimodal.fusion_module import CrossAttentionFusion
 from exp2_multimodal.decoder import RRGDecoder
@@ -18,9 +18,15 @@ class Multimodal_Memory(nn.Module):
     def __init__(
             self, 
             d_model: int = 512,
-            # CNN encoder
-            cnn_backbone: str = "resnet50",
-            cnn_freeze_layers: int = 8,
+
+            # Swin encoder
+            img_enc_backbone: str = "swin_t",
+            img_enc_freeze_layers: int = 8,
+                # FPN Configurations Dont change for SwinT
+                use_fpn: bool = True,
+                fpn_dim: int = 256,
+                fpn_scale: int = 2,
+
             # text encoder
             bert_model: str = "emilyalsentzer/Bio_ClinicalBERT", 
             bert_freeze_layers: int = 6,
@@ -46,11 +52,17 @@ class Multimodal_Memory(nn.Module):
 
         # ── Image encoder ──────────────────────────────────────────────────────
         # Produces: [B, 49, d_model]
-        self.image_encoder = CNNEncoder(
-            backbone      = cnn_backbone,
-            d_model       = d_model,
-            freeze_layers = cnn_freeze_layers,
-            dropout       = dropout,
+        self.image_encoder = SwinEncoder(
+            backbone = img_enc_backbone,
+            d_model = d_model,
+            dropout = dropout,
+            pretrained = True,
+            freeze_layers = img_enc_freeze_layers,
+
+            # FPN Configurations Dont change
+            use_fpn = use_fpn,
+            fpn_dim = fpn_dim,
+            fpn_scale = fpn_scale
         )
         
         # ── Clinical text encoder ──────────────────────────────────────────────
@@ -93,7 +105,7 @@ class Multimodal_Memory(nn.Module):
 
         # Pass though img and text encoders
         device = img.device
-        image_tokens = self.image_encoder(img)               # [B, 49, d_model]
+        image_tokens = self.image_encoder(img)               # [B, K, d_model]
         text_tokens, text_tok_mask = self.text_encoder(text, device) # [B, N, d_model], [B, N] Mask
 
         # Fuse img and text (cross attention) with res connection + gating
@@ -108,8 +120,9 @@ if __name__ == "__main__":
     model = Multimodal_Memory(
         d_model=512,
 
-        cnn_backbone="densenet121",
-        cnn_freeze_layers=8,
+        img_enc_backbone="swin_s",
+        img_enc_freeze_layers=8,
+        
 
         bert_model="emilyalsentzer/Bio_ClinicalBERT",
         bert_freeze_layers=6,
@@ -127,4 +140,6 @@ if __name__ == "__main__":
 
         dropout = 0.1
     )
+
+    
 

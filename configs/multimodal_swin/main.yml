@@ -28,8 +28,13 @@ model:
   fusion_heads: 8
   fusion_ff_dim: 256
 
-  img_enc_backbone: "densenet121"
-  img_enc_freeze_layer: 4    # unfreeze 8 layers
+  # Swin encoder
+  img_enc_backbone: "swin_s" # swin_t, swin_s, swin_b
+  img_enc_freeze_layer: 8
+  use_fpn: True
+  fpn_dim: 256   # DONT CHANGE
+  fpn_scale: 2   # DONT CHANGE
+
 
   bert_model: "emilyalsentzer/Bio_ClinicalBERT"
   bert_freeze_layer: 12   # Complete froze 12    
