@@ -2,6 +2,10 @@ import torch
 import torch.nn as nn
 
 
+
+# Sequential Refinement (the filter and Focus Approach)
+    # - pass 1: image toks queries text tokens, asks which part of the lcincal text match my visual patches
+    # - pass 2: 
 class CrossAttentionFusion(nn.Module): 
     def __init__(self, 
         d_model:   int   = 512,
@@ -30,11 +34,6 @@ class CrossAttentionFusion(nn.Module):
             batch_first = True,
         )
 
-        # ── Soft gate ──────────────────────────────────────────────────────────
-        # Conditioned on pooled clinical embedding
-        # Empty string → [CLS][SEP] pool → gate ≈ 0
-        # Real text    → rich pool       → gate ≈ 1
-        self.gate_linear = nn.Linear(d_model, 1)
 
          # ── Feed-forward ───────────────────────────────────────────────────────
         self.ffn = nn.Sequential(
@@ -47,22 +46,14 @@ class CrossAttentionFusion(nn.Module):
 
 
         # ── Layer norms (pre-norm style — more stable) ─────────────────────────
-        self.norm_img   = nn.LayerNorm(d_model)   # applied to image tokens before cross-attn
-        self.norm_clin  = nn.LayerNorm(d_model)   # applied to clinical tokens before cross-attn
-        self.norm_ff    = nn.LayerNorm(d_model)   # applied before feed-forward
+        self.norm_img1  = nn.LayerNorm(d_model)   # Before first cross-attn
+        self.norm_clin  = nn.LayerNorm(d_model)   # Before first cross-attn
 
+        self.norm2= nn.LayerNorm(d_model)   # Before second attention
+       
+        self.norm_ff    = nn.LayerNorm(d_model)   # Before feed-forward
         self.dropout    = nn.Dropout(dropout)
 
-    def _masked_pool(
-        self,
-        tokens:    torch.Tensor,   # [B, N, d_model]
-        attn_mask: torch.Tensor,   # [B, N] bool — True = ignore
-    ) -> torch.Tensor:             # [B, d_model]
-        # attn_mask: True = ignore → invert to get real token positions
-        real_mask   = (~attn_mask).float().unsqueeze(-1)    # [B, N, 1]  1=real, 0=pad
-        pooled      = (tokens * real_mask).sum(dim=1)       # [B, d_model]
-        n_real      = real_mask.sum(dim=1).clamp(min=1e-9)  # [B, 1]     avoid div/0
-        return pooled / n_real  
 
     def forward(self, 
         img_tokens: torch.Tensor, # [B, 49, d_model],
@@ -70,69 +61,66 @@ class CrossAttentionFusion(nn.Module):
         clincal_mask: torch.Tensor # True = ignore pos
         ) -> torch.Tensor:
 
-        # # pooling clin text for gate
-        # pooled_clin = self._masked_pool(clincal_text_token, clincal_mask)
-        # gate = torch.sigmoid(self.gate_linear(pooled_clin))
 
-        # # HARD GATE
-        # seq_len = (~clincal_mask).sum(dim=1)
-        # gate = (seq_len > 2).float().unsqueeze(1)
 
-        #-------- pre norms -------------------
-        norm_img = self.norm_img(img_tokens)    # [B, 49, d_model]
-        norm_clin = self.norm_clin(clincal_text_token)
-
-        # ------- attention pass 1 ------------------------------
-        # Image tokens (Q) and Text tokens (K, V): Saying how the image 
-        # "what clinical history are relevant"
-        cross_out, attn_weight = self.cross_attn(
-            query = norm_img, 
-            key = norm_clin,
-            value = norm_clin,
+        # ------------ Attention Pass 1 ------------------
+        # Seaches and creates textual informed 
+        q1 = self.norm_img1(img_tokens)
+        k1 = v1 = self.norm_clin(clincal_text_token)
+        ca_out1, _ = self.cross_attn(
+            query = q1, 
+            key = k1,
+            value = v1,
             key_padding_mask = clincal_mask
         )
+        
+        x = img_tokens + self.dropout(ca_out1)
 
-        # # residual + gated
-        # Z = img_tokens + (gate.unsqueeze(1) * self.dropout(cross_out))   # [B, 49, d_model]
+        # ------------ Attention Pass 1 ------------------
+        k2 = v2 = self.norm_img1(img_tokens)
+        q2 = self.norm2(x)
 
         # "clinically informed cross out tells image where to look"
-        cross_attn2, attn_weights = self.cross_attn2(
-            query=img_tokens,
-            key = cross_out,
-            value = img_tokens
+        ca_out2, attn_weights = self.cross_attn2(
+            query=q2,
+            key = k2,
+            value = v2
         )
 
-        # gate can provide conflicting signals to decoder
-        Z = img_tokens + (cross_out + cross_attn2)
+        # residual conncetion
+        x = x + self.dropout(ca_out2) # This essentially adds ca_out1 and ca_out2
 
-        return Z, attn_weight # Z vector [B, 49, d_model]
+        # --------- FFN ----------
+        x = x + self.dropout(self.ffn(self.norm_ff(x)))
+
+
+        return x, attn_weights # Z vector [B, 49, d_model]
 
 
 
-# if __name__ == "__main__":
-#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-#     B        = 4
-#     N_img    = 49     # 7x7 from CNN encoder
-#     N_txt    = 6     # simulated token sequence length
+    B        = 4
+    N_img    = 49     # 7x7 from CNN encoder
+    N_txt    = 6     # simulated token sequence length
 
-#     fusion = CrossAttentionFusion(
-#         d_model   = 512,
-#         num_heads = 8,
-#         ff_dim    = 728,
-#         dropout   = 0.1,
-#     ).to(device)
+    fusion = CrossAttentionFusion(
+        d_model   = 512,
+        num_heads = 8,
+        ff_dim    = 728,
+        dropout   = 0.1,
+    ).to(device)
 
-#     total_params = sum(p.numel() for p in fusion.parameters())
-#     print(total_params)
+    total_params = sum(p.numel() for p in fusion.parameters())
 
-#     img_tokens  = torch.randn(B, N_img, 512).to(device)
-#     clin_tokens = torch.randn(B, N_txt, 512).to(device)
+    img_tokens  = torch.randn(B, N_img, 512).to(device)
+    clin_tokens = torch.randn(B, N_txt, 512).to(device)
 
-#     # Simulate padding mask — last 5 tokens are padding for all samples
-#     clin_mask   = torch.zeros(B, N_txt, dtype=torch.bool).to(device)
-#     clin_mask[:, -4:] = True
+    # Simulate padding mask — last 5 tokens are padding for all samples
+    clin_mask   = torch.zeros(B, N_txt, dtype=torch.bool).to(device)
+    clin_mask[:, -4:] = True
 
-#     out, attn = fusion(img_tokens, clin_tokens, clin_mask)
+    out, attn = fusion(img_tokens, clin_tokens, clin_mask)
 
-#     print(out.shape)
+    print(out.shape)
