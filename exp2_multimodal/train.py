@@ -525,7 +525,7 @@ def main():
     best_valid_loss  = float("inf")
     patience_counter = 0
     patience = conf.PATIENCE
-    best_model_save_path = os.path.join(conf.MODEL_CHKPT_SAVE_DIR, "multimodal-only-res50.pt")
+    best_model_save_path = os.path.join(conf.MODEL_CHKPT_SAVE_DIR, config["checkpoint"]["model_save_name"])
 
     # from utils.lr_finder import LRFinder
 

@@ -4,6 +4,7 @@ checkpoint:
   save_best_only: true
   resume: null
   model_checkpoint_path: "/home/public/mkamal/checkpoints" 
+  model_save_name: multimodal_densenet.pt
 
 data:
   csv_file: "/home/public/mkamal/dataset/filtered_data/train/train_cleaned.csv"  

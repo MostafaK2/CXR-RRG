@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from torchvision.models import swin_t, swin_s, swin_b
 from torchvision.models import Swin_T_Weights
-
+from typing import Dict, List, Tuple
 
 @dataclass
 class BackboneConfig:
@@ -14,6 +14,16 @@ class BackboneConfig:
     out_channels: int
     num_layers:   int
 
+@dataclass
+class SwinConfig:
+    """Configuration for Swin Transformer variants."""
+    model_fn: callable
+    weights: object
+    embed_dim: int  # 96 for Swin-T
+    depths: List[int]  # [2, 2, 6, 2] for Swin-T
+    num_heads: List[int]  # [3, 6, 12, 24] for Swin-T
+    num_layers: int  # Total number of block groups
+    
 
 BACKBONE_REGISTRY = {
     # ── ResNet family ─────────────────────────────────────────────────────────
@@ -28,6 +38,45 @@ BACKBONE_REGISTRY = {
 
     "swin_t": BackboneConfig(models.swin_t, models.Swin_T_Weights.DEFAULT, 768, 12),
 }
+
+SWIN_REGISTRY = {
+    "swin_t": SwinConfig(model_fn=models.swin_t, weights=models.Swin_T_Weights.DEFAULT, embed_dim=96, depths=[2, 2, 6, 2], num_heads=[3, 6, 12, 24], num_layers=4,),
+    "swin_s": SwinConfig(model_fn=models.swin_s, weights=models.Swin_S_Weights.DEFAULT, embed_dim=96, depths=[2, 2, 18, 2],num_heads=[3, 6, 12, 24], num_layers=4,),
+    "swin_b": SwinConfig(model_fn=models.swin_b, weights=models.Swin_B_Weights.DEFAULT, embed_dim=128,depths=[2, 2, 18, 2],num_heads=[4, 8, 16, 32], num_layers=4,),
+}
+
+class SwinTransformerEncoder(nn.Module):
+    def __init__(
+        self,
+        backbone: str = "swin_t",
+        d_model: int = 512,
+        dropout: float = 0.1,
+        pretrained: bool = True,
+        freeze_backbone: bool = False,
+        use_fpn: bool = True,
+    ):
+        super().__init__()
+        assert backbone in SWIN_REGISTRY, (f"Unknown backbone '{backbone}'. "f"Available: {list(SWIN_REGISTRY.keys())}")
+
+        cfg = SWIN_REGISTRY[backbone]
+        weights = cfg.weights if pretrained else None
+
+        # Load Swin Tran
+        swin_model = cfg.model_fn(weights=weights)
+
+        self.stage_dims = {
+            'stage1': 96,
+            'stage2': 192,
+            'stage3': 384,
+            'stage4': 768,
+        }
+
+        self.d_model = d_model
+
+
+    pass
+
+
 
 class SwinEncoder(nn.Module):
 
