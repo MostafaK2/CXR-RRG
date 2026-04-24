@@ -15,7 +15,7 @@ class ChestXrayMRG(nn.Module):
             self, 
             d_model: int = 512,
             # CNN encoder
-            cnn_backbone: str = "resnet50",
+            cnn_backbone: str = "densenet121",
             cnn_freeze_layers: int = 8,
             # text encoder
             bert_model: str = "emilyalsentzer/Bio_ClinicalBERT", 

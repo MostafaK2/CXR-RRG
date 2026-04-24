@@ -1,9 +1,9 @@
 checkpoint:
   model_checkpoint_path: /home/public/mkamal/checkpoints
-  model_save_name: multimodal_lbl_densenet.pt
+  model_save_name: multimodal_swin_s.pt
   resume: null
   save_best_only: true
-  save_dir: results_focal
+  save_dir: results_no_fpn
 data:
   csv_file: /home/public/mkamal/dataset/filtered_data/train/train_cleaned.csv
   h5_file: /home/public/mkamal/dataset/filtered_data/train/train.h5
@@ -25,20 +25,20 @@ model:
   bert_freeze_layer: 12
   bert_max_length: 128
   bert_model: emilyalsentzer/Bio_ClinicalBERT
-  d_model: 512
-  decoder_ff_dim: 256
+  d_model: 768
+  decoder_ff_dim: 2048
   decoder_layers: 6
   decoder_max_len: 256
   decoder_n_heads: 8
-  dropout: 0.2
+  dropout: 0.1
   fpn_dim: 256
   fpn_scale: 2
-  fusion_ff_dim: 256
+  fusion_ff_dim: 768
   fusion_heads: 8
   img_enc_backbone: swin_s
-  img_enc_freeze_layer: 8
+  img_enc_freeze_layer: 4
   pad_id: 0
-  use_fpn: true
+  use_fpn: false
   vocab_size: 16000
 reproducibility:
   seed: 42
@@ -52,10 +52,10 @@ special_tokens:
 training:
   batch_size: 64
   device: cuda
-  epochs: 10
+  epochs: 25
   grad_clip: 1.0
   label_smoothing: 0
-  learning_rate: 0.000314
+  learning_rate: 1e-4
   patience: 3
-  warmup_steps: 1300
-  weight_decay: 1e-3
+  warmup_steps: 2000
+  weight_decay: 4e-4

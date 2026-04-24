@@ -1,0 +1,67 @@
+===== TRAINING RESULTS =====
+
+---- GENERAL ----
+Best Epoch: 12
+Best Validation Loss: 1.7754
+Model Class: Multimodal_Memory
+
+---- CONFIG ----
+<__main__.Config object at 0x7c57e2755490>
+
+---- VALIDATION METRICS ----
+BLEU Scores: [0.2870782387108037, 0.17840265085139928, 0.1257405256430364, 0.08979222473467033]
+METEOR Score: 0.2499156615676252
+CheXbert Metrics:
+  Enlarged Cardiomediastinum_precision: 0.0
+  Enlarged Cardiomediastinum_recall: 0.0
+  Enlarged Cardiomediastinum_f1: 0.0
+  Cardiomegaly_precision: 0.1953
+  Cardiomegaly_recall: 0.4066
+  Cardiomegaly_f1: 0.2638
+  Lung Opacity_precision: 0.5479
+  Lung Opacity_recall: 0.2928
+  Lung Opacity_f1: 0.3816
+  Lung Lesion_precision: 0.2
+  Lung Lesion_recall: 0.0278
+  Lung Lesion_f1: 0.0488
+  Edema_precision: 0.2874
+  Edema_recall: 0.2283
+  Edema_f1: 0.2545
+  Consolidation_precision: 0.1262
+  Consolidation_recall: 0.1477
+  Consolidation_f1: 0.1361
+  Pneumonia_precision: 0.0
+  Pneumonia_recall: 0.0
+  Pneumonia_f1: 0.0
+  Atelectasis_precision: 0.1887
+  Atelectasis_recall: 0.1775
+  Atelectasis_f1: 0.1829
+  Pneumothorax_precision: 0.2143
+  Pneumothorax_recall: 0.0238
+  Pneumothorax_f1: 0.0429
+  Pleural Effusion_precision: 0.5
+  Pleural Effusion_recall: 0.4533
+  Pleural Effusion_f1: 0.4755
+  Pleural Other_precision: 0.0
+  Pleural Other_recall: 0.0
+  Pleural Other_f1: 0.0
+  Fracture_precision: 0.3333
+  Fracture_recall: 0.027
+  Fracture_f1: 0.05
+  Support Devices_precision: 0.7157
+  Support Devices_recall: 0.6179
+  Support Devices_f1: 0.6632
+  No Finding_precision: 0.0179
+  No Finding_recall: 0.0952
+  No Finding_f1: 0.0301
+  macro_precision: 0.2376
+  macro_recall: 0.1784
+  macro_f1: 0.1807
+
+---- TEST METRICS ----
+BLEU Scores: None
+METEOR Score: None
+
+---- LOSSES ----
+Train Losses: [4.896992872779864, 2.4661656269310197, 2.146093835694124, 1.9876093804125001, 1.8767471991746123, 1.7880913158589729, 1.7138262869350096, 1.648115845682513, 1.5896679857181193, 1.536582241820834, 1.4878612108048506, 1.4433770038063032, 1.4028692824174795, 1.3662985524584967, 1.332609136235458]
+Validation Losses: [2.703228024716647, 2.2027256727218627, 2.0383794843025926, 1.952792646300118, 1.8906585270503782, 1.8546105992119268, 1.8235179316322758, 1.8054631318686143, 1.7932398814075399, 1.788026829035777, 1.778879958278728, 1.778759980201721, 1.7754078311740227, 1.7854816202847463, 1.7782930810496491]

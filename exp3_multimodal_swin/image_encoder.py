@@ -156,12 +156,14 @@ class SwinEncoder(nn.Module):
         # ------------------------ 
         self.d_model = d_model
         self.dropout = nn.Dropout(dropout)
+        c_per_stage = self._find_dimensions_per_stage()
         
         # FPN BASED
         self.use_fpn = use_fpn
         if self.use_fpn:
-            c_per_stage = self._find_dimensions_per_stage()
             self.fpn = FPN(scales=fpn_scale, fpn_dim=fpn_dim, d_model=d_model, c_per_stage=c_per_stage)
+        else: 
+            self.proj = nn.Linear(c_per_stage[7], d_model)
         
     
     def _find_dimensions_per_stage(self):
@@ -201,8 +203,8 @@ class SwinEncoder(nn.Module):
         if self.use_fpn:
             return self.fpn(feature_to_out)
         
-       
-        return feat_s4.reshape(feat_s4.size(0), -1, feat_s4.size(-1)) # [B, 49, d_model]
+        out = feat_s4.reshape(feat_s4.size(0), -1, feat_s4.size(-1)) # [B, 49, 768]
+        return self.proj(out)
 
 
 
@@ -260,7 +262,7 @@ class CNNEncoder(nn.Module):
 
 # ── Usage ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    encoder = SwinEncoder(freeze_layers=6)
+    encoder = SwinEncoder(freeze_layers=6, use_fpn=True)
 
     #  # ── Parameter summary ─────────────────────────────────────────────────
     trainable     = sum(p.numel() for p in encoder.parameters() if p.requires_grad)
