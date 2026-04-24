@@ -12,22 +12,22 @@ data:
   min_freq: 3
   num_workers: 8
   valid_sz: 0.1
-  test_sz: 0.0001
+  test_sz: 0.1
 
 model:
   vocab_size: 20000
   d_model: 512
   
   decoder_n_heads: 8
-  decoder_ff_dim: 768
+  decoder_ff_dim: 2048
   decoder_max_len: 256
   decoder_layers: 6
   pad_id: 0
   
   fusion_heads: 8
-  fusion_ff_dim: 768
+  fusion_ff_dim: 1024
 
-  img_enc_backbone: "resnet50"
+  img_enc_backbone: "densenet121"
   img_enc_freeze_layer: 8    # Complete frozen
 
   bert_model: "emilyalsentzer/Bio_ClinicalBERT"
@@ -44,7 +44,7 @@ training:
   grad_clip: 1.0
   warmup_steps: 1300
   patience: 5
-  label_smoothing: 0
+  label_smoothing: 0.1
   device: cuda
 
 reproducibility:
