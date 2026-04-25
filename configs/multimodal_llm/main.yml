@@ -1,0 +1,55 @@
+# configs/captioner-conf/main.yml
+checkpoint:
+  save_dir: results
+  model_save_name: multimodal_llm.pt
+  save_best_only: true
+  resume: null
+  model_checkpoint_path: "/home/public/mkamal/checkpoints" 
+
+data:
+  csv_file: "/home/public/mkamal/dataset/filtered_data/train/train_cleaned.csv"  
+  h5_file: "/home/public/mkamal/dataset/filtered_data/train/train.h5"  
+  max_len: 256
+  min_freq: 3
+  num_workers: 8
+  valid_sz: 0.1
+  test_sz: 0.1
+
+model:
+  # SwinT encoder
+  img_enc_dim: 768
+  img_enc_backbone: "swin_s" # swin_t, swin_s, swin_b
+  img_enc_freeze_layer: 8 # Completely frozen
+  use_fpn: False
+  fpn_dim: 256   # DONT CHANGE
+  fpn_scale: 2   # DONT CHANGE
+  dropout: 0.1
+  max_new_tokens: 256
+
+  model_name: "microsoft/BioGPT-Large"
+
+training:
+  epochs: 20
+  batch_size: 16
+  learning_rate: 1e-4
+  weight_decay: 1e-4
+  grad_clip: 1.0
+  warmup_steps: 300
+  patience: 3
+  label_smoothing: 0
+  device: cuda
+
+reproducibility:
+  seed: 42
+
+logging:
+  run_name: null
+  log_every: 50
+  eval_every: 1
+
+eval: 
+  findings_label_path: "/home/public/mkamal/dataset/filtered_data/finding_labels.csv"
+  impression_label_path: "/home/public/mkamal/dataset/filtered_data/impression_labels.csv"
+  reports_label_path: "/home/public/mkamal/dataset/filtered_data/reports_label.csv"
+  chestXbertModelWeights: "/home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/utils/chexbert.pth"
+  

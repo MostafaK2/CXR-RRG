@@ -8,7 +8,7 @@ import math
 import shutil
 
 from utils.config import load_config, _find_root
-from utils.metrics import evaluate_metric
+from utils.metrics import evaluate_metric, evaluate_metric_llm
 
 import torch
 import torch.nn as nn
@@ -30,11 +30,13 @@ from tokenizers.models import BPE
 from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import Whitespace
 
-from exp2_multimodal.dataset import load_and_split, CXRDataset
+from exp2_multimodal.dataset import load_and_split
+from dataset import Dataset_for_llm_model
 
+from model import Radiology_llm
 import yaml
 
-from model import Multimodal_Memory
+from transformers import AutoTokenizer
 
 from utils.logginghelpers import log_chexbert_f1_summary, save_training_results
 
@@ -49,7 +51,7 @@ logging.basicConfig(
     format="%(asctime)s | [%(levelname)s] | %(message)s",
     handlers=[
         logging.StreamHandler(),                 # print to console
-        logging.FileHandler("logs/multimodal_label_train2.log", mode='w')    # save to file
+        logging.FileHandler("logs/multimodal_llm_train.log", mode='w')    # save to file
     ]
 )
 logger = logging.getLogger()
@@ -132,10 +134,9 @@ def override_config(args, config):
     return config
 args = get_args()
 
-DEFAULT = os.path.join(_find_root(), 'configs', 'multimodal_swin', 'main.yml')
+DEFAULT = os.path.join(_find_root(), 'configs', 'multimodal_llm', 'main.yml')
 config  = load_config(args.config, default_config=DEFAULT, logger=logger)
 config = override_config(args,config)
-
 
 
 # ---------------- Device ----------------  COPY THIS
@@ -159,92 +160,7 @@ def seed_everything(seed: int = 42):
 SEED = config["reproducibility"]["seed"]
 seed_everything(config["reproducibility"]["seed"])
 
-# --------------------------------  Preprocessing and splitting the data ------------------------------------
-
-BOS        = config['special_tokens']['bos']
-EOS        = config['special_tokens']['eos']
-PAD        = config['special_tokens']['pad']
-UNK        = config['special_tokens']['unk']
-FINDING    = config['special_tokens']['finding']
-IMPRESSION = config['special_tokens']['impression']
-
-def build_tokenizer(train_df, caption_col, max_len, special_tokens, vocab_size=10000):
-    """
-    Trains BPE tokenizer on train split only.
-    """
-    logger.info("Training BPE tokenizer...")
-
-    _, _, _, unk_token, _, _ = special_tokens
-
-    tokenizer = Tokenizer(BPE(unk_token=unk_token))
-    tokenizer.pre_tokenizer = Whitespace()
-
-    trainer = BpeTrainer(vocab_size=vocab_size, special_tokens=special_tokens)
-
-    train_captions = train_df[caption_col].tolist()
-    tokenizer.train_from_iterator(train_captions, trainer=trainer)
-
-    word2idx = tokenizer.get_vocab()
-    logger.info(f"Vocabulary size: {len(word2idx)}")
-
-    return word2idx, tokenizer
-
-train_df, valid_df, test_df = load_and_split(config["data"]["csv_file"], val_size=config["data"]["valid_sz"], test_size=config["data"]["test_sz"], seed=SEED, logger=logger)
-
-word2idx, tokenizer = build_tokenizer(   # just trains the tokenizer
-    train_df,
-    caption_col="section_impression_gen",
-    max_len=config["data"]["max_len"],
-    special_tokens=[PAD, BOS, EOS, UNK, FINDING, IMPRESSION],
-    vocab_size=config['model']['vocab_size']
-)
-
-logger.info(f"Vocab size is {tokenizer.get_vocab_size()}")
-logger.info("Tokenizer has been completed")
-logger.info("Updating Configuration...")
-
-config["model"]["vocab_size"] = tokenizer.get_vocab_size()
-config["model"]["pad_id"] = word2idx[PAD]
-logger.info("  configuration updated")
-logger.info(
-    f"PAD: {word2idx[PAD]}  "
-    f"BOS: {word2idx[BOS]}  "
-    f"EOS: {word2idx[EOS]}  "
-    f"UNK: {word2idx[UNK]}  "
-    f"FINDING: {word2idx[FINDING]}  "
-    f"IMPRESSION: {word2idx[IMPRESSION]}"
-)
-
-
-# --------------------------------------- Dataset Helper Function (EDIT) --------------------------------
-def pad_sequence(sequences, max_len, pad_value): 
-    batch_size = len(sequences)
-    padded = torch.full((batch_size, max_len), pad_value, dtype=torch.long)
-
-    for i, seq in enumerate(sequences):
-        seq_len = min(len(seq), max_len)
-        padded[i, :seq_len] = seq[:seq_len]
-    return padded
-
-def collate_fn(batch):  
-    img_tens, src_seqs, tgt_seqs, clinical_text, labels = zip(*batch)
-    img_tens = torch.stack(img_tens) # stack the images (B, 3, 224, 224)
-
-    src_lens = torch.tensor([len(s) for s in src_seqs])
-    tgt_lens = torch.tensor([len(t) for t in tgt_seqs])
-
-    max_src_len = max(src_lens)
-    max_tgt_len = max(tgt_lens)
-
-    padded_src = pad_sequence(src_seqs, max_src_len, word2idx[PAD])
-    padded_tgt = pad_sequence(tgt_seqs, max_tgt_len, word2idx[PAD])
-
-    # new stuff
-    clinical_text = list(clinical_text)
-    labels = torch.stack(labels)
-
-    return img_tens, padded_src, padded_tgt, clinical_text, labels
-
+# ---------------- LABEL DATA ---------------- COPY THIS
 def reorder_labels_df(path: str) -> pd.DataFrame:
     labels_df = pd.read_csv(path)
     CHEXBERT_LABELS = [
@@ -268,20 +184,31 @@ def reorder_labels_df(path: str) -> pd.DataFrame:
 
     return labels_df
 
+
+def collate_fn(batch):  
+    img_tens, report_ids, report_mask, clinical_history, labels = zip(*batch)
+    img_tens = torch.stack(img_tens) # stack the images (B, 3, 224, 224)
+    report_ids = torch.stack(report_ids)
+    report_mask = torch.stack(report_mask)
+    # new stuff
+    clinical_history = list(clinical_history)
+    labels = torch.stack(labels)
+
+    return img_tens, report_ids, report_mask, clinical_history, labels
 # Training Helpers
 # ----------------- Training Helper functions ------------------- 
 def train_epoch(model, dataloader, optimizer, criterion, device,  clip_grad=1.0, warmup_scheduler=None):
     model.train()
     total_loss = 0.0
-    for img, src, tgt, clincal_text, labels in tqdm.tqdm(dataloader,"train"):
-        img, src, tgt = img.to(device), src.to(device), tgt.to(device)
+    for img, report_ids, report_mask, clincal_text, labels in tqdm.tqdm(dataloader,"train"):
+        images      = img.to(device)
+        report_ids  = report_ids.to(device)
+        report_mask = report_mask.to(device)
         labels = labels.to(device)
         optimizer.zero_grad()
 
-        logits = model(img, clincal_text, src)  # (B, T, V)
-        B, T, V = logits.shape
-
-        loss = criterion(logits.view(B * T, V), tgt.view(B * T))
+        out = model(images, clincal_text, report_ids, report_mask)  # (B, T, V)
+        loss = out.loss
         loss.backward()
 
         if clip_grad is not None:
@@ -289,15 +216,15 @@ def train_epoch(model, dataloader, optimizer, criterion, device,  clip_grad=1.0,
 
         optimizer.step()
 
-        total_loss += loss.item()
-        
         if warmup_scheduler is not None:
             warmup_scheduler.step()
-            
-    avg_loss = total_loss / len(dataloader)
 
-    nll = float(avg_loss)
-    ppl = float(math.exp(nll))
+        total_loss += loss.item()
+        
+             
+
+    nll = total_loss / len(dataloader)
+    ppl = math.exp(nll)
     return nll, ppl
 
 @torch.no_grad()
@@ -306,20 +233,22 @@ def evaluate(model, dataloader, criterion, device):
     total_loss = 0.0
     
     with torch.no_grad():
-        for img, src, tgt, clinical_text, labels in tqdm.tqdm(dataloader, "Evaluating"):
-            img, src, tgt = img.to(device), src.to(device), tgt.to(device)
+         for img, report_ids, report_mask, clincal_text, labels in tqdm.tqdm(dataloader, "Evaluating"):
+            images      = img.to(device)
+            
+            report_ids  = report_ids.to(device)
+            report_mask = report_mask.to(device)
             labels = labels.to(device)
 
-            logits = model(img, clinical_text, src)  # (B, T, V)
-            B, T, V = logits.shape
-            
-            loss = criterion(logits.view(B * T, V), tgt.view(B * T))
-            
+            out = model(images, clincal_text, report_ids, report_mask)  # (B, T, V)
+            loss = out.loss
             total_loss += loss.item()
+            
     
     nll = total_loss / len(dataloader)
     ppl = math.exp(nll)
     return nll, ppl
+
 
 
 # ---------------- MODEL CONFIGURATIONS -------------------
@@ -332,31 +261,15 @@ class Config:
     CSV_PATH = config["data"]["csv_file"]
 
     MIN_FREQ = config['data']['min_freq']
-
-    # ---------- Special tokens --------------------------
-    BOS = config['special_tokens']['bos']
-    PAD = config['special_tokens']['pad']
-    EOS = config['special_tokens']['eos']
-    UNK = config['special_tokens']['unk']
-    FINDING = config['special_tokens']['finding']
-    IMPRESSION = config['special_tokens']['impression']
-    # findings, impresssoin add later if needed
+    MAX_LEN = config['data']['max_len']
 
     # ------ Model Parameters -------------------------------------------
-    VOCAB_SIZE = int(config['model']['vocab_size'])   # Will be set during training
-    D_MODEL = int(config['model']['d_model'])
+    IMG_ENC_DIM = int(config['model']['img_enc_dim'])
 
-        # Transformer Decoder
-    DECODER_N_HEADS = int(config['model']['decoder_n_heads'])
-    DECODER_FF_DIM = int(config['model']['decoder_ff_dim'])
-    DECODER_MAX_LEN = int(config['model']['decoder_max_len'])
-    DECODER_LAYERS = int(config['model']['decoder_layers'])
-    PAD_ID = int(config['model']['pad_id'])
-       
-        # CROSS ATTN FUSION
-    FUSION_HEADS = int(config['model']['fusion_heads'])
-    FUSION_FF_DIM = int(config['model']['fusion_ff_dim'])
-     
+       # LLM DECODER
+    LLM_MODEL_NAME = str(config['model']['model_name'])
+    MAX_NEW_TOKEN = int(config['model']['max_new_tokens'])
+    
         # IMG ENCODER
     IMG_ENC_BACKBONE = str(config['model']['img_enc_backbone'])
     IMG_ENC_FREEZE_LAYER = int(config['model']['img_enc_freeze_layer'])
@@ -364,12 +277,6 @@ class Config:
     FPN_DIM = int(config['model']['fpn_dim'])
     FPN_SCALE = int(config['model']['fpn_scale'])
 
-
-        # Text encoder
-    BERT_MODEL = str(config['model']['bert_model'])
-    BERT_FREEZE_LAYER = int(config['model']['bert_freeze_layer'])
-    BERT_MAX_LENGTH = int(config['model']['bert_max_length'])
-     
      # Dropout
     DROPOUT = float(config['model']['dropout'])
 
@@ -391,11 +298,11 @@ class Config:
     MODEL_CHKPT_SAVE_DIR = config['checkpoint']['model_checkpoint_path']
 
 
+
 def main():
     # - - - -- - - - - Configurations and results folders - --  -- -- 
 
     conf = Config()
-    logger.info(f"{conf.VOCAB_SIZE}, {tokenizer.get_vocab_size()}, finding: {conf.FINDING}: {word2idx[conf.FINDING]} Impression: {conf.IMPRESSION}: {word2idx[conf.IMPRESSION]}")
     
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -410,50 +317,22 @@ def main():
     
     logger.info(f"Saving all results, model configurations, results in {save_path}")
 
-    # - - - - - -  - - - - - - - - - END - - - -- -- - - - -- - - -- - --
+    # - - - - - -  - - - - - - - - - MODEL DEFINITION - - - -- -- - - - -- - - -- - --
 
-    model = Multimodal_Memory(
-        d_model=conf.D_MODEL,
-        # IMG Encoder
-        img_enc_backbone=conf.IMG_ENC_BACKBONE,
-        img_enc_freeze_layers=conf.IMG_ENC_FREEZE_LAYER,
-        use_fpn=conf.USE_FPN,
-        fpn_dim = conf.FPN_DIM,
-        fpn_scale=conf.FPN_SCALE,
-        # text encoder
-        bert_model=conf.BERT_MODEL,
-        bert_freeze_layers=conf.BERT_FREEZE_LAYER,
-        bert_max_length=conf.BERT_MAX_LENGTH,
-        # Fusion
-        fusion_heads = conf.FUSION_HEADS,
-        fusion_ff_dim = conf.FUSION_FF_DIM,
-
-        # Decoder
-        vocab_size = conf.VOCAB_SIZE, # will be set
-        decoder_layers = conf.DECODER_LAYERS,
-        decoder_heads = conf.DECODER_N_HEADS,
-        decoder_ff_dim = conf.DECODER_FF_DIM,
-        decoder_max_len = conf.DECODER_MAX_LEN,
-        pad_id = conf.PAD_ID,
-
-        dropout = conf.DROPOUT
-    )
-    model = model.to(conf.DEVICE)
+    model = Radiology_llm(
+        img_enc_backbone = conf.IMG_ENC_BACKBONE,
+        img_enc_dim = conf.IMG_ENC_DIM,
+        img_enc_freeze_layer = conf.IMG_ENC_FREEZE_LAYER,
+        use_fpn = conf.USE_FPN,
+        fpn_scale = conf.FPN_DIM,
+        dropout = conf.DROPOUT,
+        max_new_tokens = conf.MAX_NEW_TOKEN,
+        model_name =  conf.LLM_MODEL_NAME
+    ).to(conf.DEVICE)
 
     optimizer = AdamW(model.parameters(), lr=conf.LR, weight_decay=conf.WEIGHT_DECAY)
-
     # CE Loss (prev)
-    criterion = nn.CrossEntropyLoss(ignore_index=conf.PAD_ID, label_smoothing=conf.LABEL_SMOOTHING)
-
-    # # FOCAL LOSS
-    # # ── REPLACE with this ──────────────────────────────────────────────────
-    # vocab_weights = build_clinical_vocab_weights(tokenizer, DEVICE)
-    # criterion = ClinicalFocalLoss(
-    #     vocab_weights   = vocab_weights,
-    #     gamma           = 2.0,
-    #     ignore_index    = conf.PAD_ID,
-    #     label_smoothing = conf.LABEL_SMOOTHING   # reuses your existing config value
-    # )
+    criterion = nn.CrossEntropyLoss(label_smoothing=conf.LABEL_SMOOTHING)
 
     # Parameter Calculation
     total_params     = sum(p.numel() for p in model.parameters())
@@ -464,8 +343,28 @@ def main():
     logger.info(f"  - Trainable params: {trainable_params:,}")
     logger.info(f"  - Non-trainable:    {total_params - trainable_params:,}")
 
-    # ------------------- Datasets and Dataloader --------------------------------
-    imagenet_transform = transforms.Compose([
+    # ── Resume from checkpoint ──────────────────────────────────────────────────
+    start_epoch = 0
+    if config['checkpoint'].get('resume'):
+        resume_path = config['checkpoint']['resume']
+        if os.path.isfile(resume_path):
+            ckpt = torch.load(resume_path, map_location=conf.DEVICE, weights_only=False)
+            model.load_state_dict(ckpt['model_state_dict'])
+            optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+            start_epoch = ckpt['epoch'] + 1
+            best_valid_loss = ckpt['valid_loss']
+            logger.info(f"Resumed from {resume_path} (epoch {ckpt['epoch']+1}, valid loss {ckpt['valid_loss']:.4f})")
+        else:
+            logger.warning(f"Resume path not found: {resume_path}")
+
+    # ---------------- Splitting the data ------------------------------------
+    train_df, valid_df, test_df = load_and_split(config["data"]["csv_file"], val_size=config["data"]["valid_sz"], test_size=config["data"]["test_sz"], seed=SEED, logger=logger)
+    
+    tokenizer = AutoTokenizer.from_pretrained(conf.LLM_MODEL_NAME)
+    tokenizer.pad_token    = tokenizer.eos_token
+    tokenizer.padding_side = "right"
+
+    transform = transforms.Compose([
         transforms.Lambda(lambda x: x.repeat(3, 1, 1)),  # grayscale -> 3 channels
         transforms.Normalize(
             mean=[0.485, 0.456, 0.406],
@@ -476,58 +375,37 @@ def main():
     ## CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED
     label_df = reorder_labels_df(config['eval']['reports_label_path'])
 
-    # Datasets
-    train_ds = CXRDataset(
+    train_dataset = Dataset_for_llm_model(
         df_reports = train_df,
-        df_labels  = label_df, 
-        h5_path    = conf.H5_PATH, 
-        vocab      = word2idx, 
-        bos        = conf.BOS, 
-        eos        = conf.EOS, 
-        unk        = conf.UNK,
-        finding    = conf.FINDING,
-        impression = conf.IMPRESSION,
-        decoder_max_len = conf.DECODER_MAX_LEN, 
-        tokenizer  = tokenizer, 
-        transform  = imagenet_transform
+        df_labels  = label_df,
+        h5_path    = conf.H5_PATH,
+        tokenizer  = tokenizer,
+        max_len    = conf.MAX_LEN,
+        transform  = transform,
     )
 
-    valid_ds = CXRDataset(
+    valid_dataset = Dataset_for_llm_model(
         df_reports = valid_df,
-        df_labels  = label_df, 
-        h5_path    = conf.H5_PATH, 
-        vocab      = word2idx, 
-        bos        = conf.BOS, 
-        eos        = conf.EOS, 
-        unk        = conf.UNK,
-        finding    = conf.FINDING,
-        impression = conf.IMPRESSION, 
-        decoder_max_len = conf.DECODER_MAX_LEN,  
-        tokenizer  = tokenizer, 
-        transform  = imagenet_transform
+        df_labels  = label_df,
+        h5_path    = conf.H5_PATH,
+        tokenizer  = tokenizer,
+        max_len    = conf.MAX_LEN,
+        transform  = transform,
     )
 
-    test_ds = CXRDataset(
+    test_dataset = Dataset_for_llm_model(
         df_reports = test_df,
-        df_labels  = label_df, 
-        h5_path    = conf.H5_PATH, 
-        vocab      = word2idx, 
-        bos        = conf.BOS, 
-        eos        = conf.EOS, 
-        unk        = conf.UNK, 
-        finding    = conf.FINDING,
-        impression = conf.IMPRESSION,
-        decoder_max_len = conf.DECODER_MAX_LEN,  
-        tokenizer  = tokenizer, 
-        transform  = imagenet_transform
+        df_labels  = label_df,
+        h5_path    = conf.H5_PATH,
+        tokenizer  = tokenizer,
+        max_len    = conf.MAX_LEN,
+        transform  = transform,
     )
-    
-    # Dataloaders
-    train_dl = DataLoader(train_ds, batch_size=conf.BATCH_SIZE, shuffle=True, collate_fn=collate_fn, num_workers=8)
-    valid_dl = DataLoader(valid_ds, batch_size=conf.BATCH_SIZE, shuffle=False, collate_fn=collate_fn, num_workers=8)
-    test_dl = DataLoader(test_ds, batch_size=conf.BATCH_SIZE, shuffle=False, collate_fn=collate_fn, num_workers=8)
 
-    
+    train_dl = DataLoader(train_dataset, batch_size=conf.BATCH_SIZE,shuffle=True,  collate_fn=collate_fn, num_workers=4)
+    valid_dl = DataLoader(valid_dataset, batch_size=conf.BATCH_SIZE, shuffle=False, collate_fn=collate_fn, num_workers=4)
+    test_dl  = DataLoader(test_dataset,  batch_size=conf.BATCH_SIZE, shuffle=False, collate_fn=collate_fn, num_workers=4)
+
     # Scheduler (Warmup + Cosine Anealing): Warmup(~0 -> LR) -> Then -> CosineAnealing (LR  -> ~0)
     #  ----------------  Scheduler  -----------------
     warmup_scheduler = LinearLR(
@@ -551,9 +429,9 @@ def main():
     patience = conf.PATIENCE
     best_model_save_path = os.path.join(conf.MODEL_CHKPT_SAVE_DIR, config['checkpoint']['model_save_name'])
 
-    from utils.lr_finder import LRFinder
 
     # # ── LR Finder — run once, then comment out ───────────────────────────────
+    # from utils.lr_finder import LRFinder
     # finder = LRFinder(
     #     model     = model,
     #     optimizer = optimizer,
@@ -569,9 +447,10 @@ def main():
     #     save_path  = os.path.join(save_path, "lr_finder.png"),
     # )
 
+
     # ------------------------------------- TRAINING START ----------------------------------------------------------
     logger.info("======= " + "Starting Training " + ("=" * 60))
-    
+
     for epoch in range(conf.EPOCHS):
         if epoch > epoch_by_warmup:
             warmup_scheduler = None
@@ -588,30 +467,14 @@ def main():
             torch.save({
                 'model_state_dict': model.state_dict(),
                 'hyperparams': {
-                    # Core
-                    'd_model':            conf.D_MODEL,
-                    'dropout':            conf.DROPOUT,
-                    # IMG encoder
-                    'img_enc_backbone':       conf.IMG_ENC_BACKBONE,
-                    'img_enc_freeze_layers':  conf.IMG_ENC_FREEZE_LAYER,
-                    'use_fpn':                conf.USE_FPN,
-                    'fpn_dim':                conf.FPN_DIM,
-                    'fpn_scale':              conf.FPN_SCALE,
-
-                    # Text encoder
-                    'bert_model':         conf.BERT_MODEL,
-                    'bert_freeze_layers': conf.BERT_FREEZE_LAYER,
-                    'bert_max_length':    conf.BERT_MAX_LENGTH,
-                    # Fusion
-                    'fusion_heads':       conf.FUSION_HEADS,
-                    'fusion_ff_dim':      conf.FUSION_FF_DIM,
-                    # Decoder
-                    'vocab_size':         conf.VOCAB_SIZE,
-                    'decoder_layers':     conf.DECODER_LAYERS,
-                    'decoder_heads':      conf.DECODER_N_HEADS,
-                    'decoder_ff_dim':     conf.DECODER_FF_DIM,
-                    'decoder_max_len':    conf.DECODER_MAX_LEN,
-                    'pad_id':             conf.PAD_ID,
+                    'img_enc_backbone'      : conf.IMG_ENC_BACKBONE,
+                    'img_enc_dim'           : conf.IMG_ENC_DIM,
+                    'img_enc_freeze_layer'  : conf.IMG_ENC_FREEZE_LAYER,
+                    'use_fpn'               : conf.USE_FPN,
+                    'fpn_scale'             : conf.FPN_DIM,
+                    'dropout'               : conf.DROPOUT,
+                    'max_new_tokens'        : conf.MAX_NEW_TOKEN,
+                    'model_name'            : conf.LLM_MODEL_NAME
 
                 },
                 'optimizer_state_dict': optimizer.state_dict(),
@@ -643,6 +506,8 @@ def main():
             valid_nll,
             valid_ppl,
         )
+        
+
 
     # ── Plots ─────────────────────────────────────────────────────────────────────
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 5))
@@ -665,27 +530,26 @@ def main():
     logger.info("Plots saved in /results/training_curves.png")
 
     logger.info("Training & Evaluating completed!")
-        
+
     # # ── Evaluation Test & Valid Dataset ─────────────────────────────────────────────────────────────────────
     logger.info("======= " + "Starting Evaluating " + ("=" * 60))
     
     ckpt = torch.load(best_model_save_path, weights_only=False)
     hp   = ckpt['hyperparams']
-    model = Multimodal_Memory(**hp).to(conf.DEVICE)
+    model = Radiology_llm(**hp).to(conf.DEVICE)
     model.load_state_dict(ckpt['model_state_dict'])
     logger.info(f"Loaded checkpoint from epoch {ckpt['epoch']+1} with valid loss {ckpt['valid_loss']:.4f}")
 
 
     logger.info("======= Calculating Evaluation BLEU Scores =======")
-    cpbleus_valid, avg_valid_meteor, chexbert_res_valid = evaluate_metric(
-        model,
-        valid_df, 
-        valid_ds, 
-        tokenizer, 
-        word2idx,
-        config, 
-        conf.DEVICE,
-        num_samples=1000,
+    cpbleus_valid, avg_valid_meteor, chexbert_res_valid = evaluate_metric_llm(
+        model = model,
+        df    = valid_df, 
+        dataset = valid_dataset, 
+        config = config, 
+        device = conf.DEVICE,
+        num_samples=5000,
+        batch_size = conf.BATCH_SIZE,
         labels_path=config["eval"]["reports_label_path"] # switch to reports_label_path
     )
 
@@ -693,9 +557,8 @@ def main():
     logger.info(f"Validation METEOR score: {avg_valid_meteor}")
     log_chexbert_f1_summary(chexbert_res_valid, logger)
 
-
+    
     # ---------------------------- Training and Evaluating Complete ------------------------------------------ #
-
     # Saving to result.txt
     save_training_results(
         # General Stuff
@@ -718,18 +581,12 @@ def main():
         train_losses=tl_list,
         valid_losses=vl_list,
     )
-
-    tokenizer_file = os.path.join(save_path, "bpe_tokenizer.json")
-    tokenizer.save(tokenizer_file)
-
-    logger.info(f"BPE Tokenizer saved to: {tokenizer_file}")
-
-    ## LAST STEP ## 
+    # LAST STEP ## 
     # Flush handlers and save log file
     for handler in logger.handlers:
         handler.flush()
     
-    temp_log = "/home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/logs/multimodal_swin_train.log"
+    temp_log = "/home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/logs/multimodal_llm_train.log"
     final_log = os.path.join(save_path, "train.log")
     if os.path.exists(temp_log):
         shutil.copy(temp_log, final_log)
