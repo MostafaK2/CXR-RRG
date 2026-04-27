@@ -20,9 +20,9 @@ model:
   d_model: 512
   
   decoder_n_heads: 8
-  decoder_ff_dim: 2048
+  decoder_ff_dim: 768
   decoder_max_len: 256
-  decoder_layers: 6
+  decoder_layers: 4
   pad_id: 0
   
   fusion_heads: 8
@@ -30,7 +30,7 @@ model:
 
   # Swin encoder
   img_enc_backbone: "swin_s" # swin_t, swin_s, swin_b
-  img_enc_freeze_layer: 2 # Completely frozen 12 (total)
+  img_enc_freeze_layer: 8 # Completely frozen 8 (total)
   use_fpn: False
   fpn_dim: 256   # DONT CHANGE
   fpn_scale: 2   # DONT CHANGE

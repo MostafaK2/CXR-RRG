@@ -26,8 +26,8 @@ model:
   bert_max_length: 128
   bert_model: emilyalsentzer/Bio_ClinicalBERT
   d_model: 512
-  decoder_ff_dim: 2048
-  decoder_layers: 6
+  decoder_ff_dim: 768
+  decoder_layers: 4
   decoder_max_len: 256
   decoder_n_heads: 8
   dropout: 0.1
@@ -36,7 +36,7 @@ model:
   fusion_ff_dim: 768
   fusion_heads: 8
   img_enc_backbone: swin_s
-  img_enc_freeze_layer: 2
+  img_enc_freeze_layer: 8
   pad_id: 0
   use_fpn: false
   vocab_size: 16000

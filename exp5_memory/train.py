@@ -287,13 +287,15 @@ def train_epoch(model, dataloader, optimizer, criterion, device, pos_weight=None
 
         optimizer.zero_grad()
 
-        report_logits, mlc_logits = model(img, clincal_text, src, labels=None)  # (B, T, V)
+        report_logits, mlc_prob = model(img, clincal_text, src, labels=None)  # (B, T, V)
         B, T, V = report_logits.shape
 
         # Loss calculation 
+        logger.info(f"minmax: {mlc_prob.min().item():.4f}, {mlc_prob.max().item():.4f}")
+        
         gen_loss = criterion(report_logits.view(B * T, V), tgt.view(B * T))
         mlc_loss = F.binary_cross_entropy(
-            mlc_logits,                    # already in [0,1] via softmax
+            mlc_prob,                    # already in [0,1] via softmax
             labels.float(),
             reduction='mean'
         )
@@ -336,7 +338,7 @@ def evaluate(model, dataloader, criterion, device, pos_weight=None, alpha=0.3, l
             tgt    = tgt.to(device)
             labels = labels.to(device).float()
 
-            report_logits, mlc_logits = model(img, clinical_text, src)
+            report_logits, mlc_prob = model(img, clinical_text, src)
             B, T, V = report_logits.shape
             
             gen_loss = criterion(
@@ -344,7 +346,7 @@ def evaluate(model, dataloader, criterion, device, pos_weight=None, alpha=0.3, l
                 tgt.view(B * T)
             )
             mlc_loss = F.binary_cross_entropy(
-                mlc_logits,                    # already in [0,1] via softmax
+                mlc_prob,                    # already in [0,1] via softmax
                 labels.float(),
                 reduction='mean'
             )
