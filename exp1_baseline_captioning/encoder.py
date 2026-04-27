@@ -102,7 +102,7 @@ class CNNEncoder(nn.Module):
                     param.requires_grad = False
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
-        x = self.pool(self.backbone(images))          # (B, C, 7, 7)
+        x = self.backbone(images) # (B, C, 7, 7)     
         B, C, H, W = x.shape
         x = x.view(B, C, H * W).transpose(1, 2)      # (B, 49, C)
         x = self.dropout(self.norm(self.projection(x)))  # (B, 49, d_model)

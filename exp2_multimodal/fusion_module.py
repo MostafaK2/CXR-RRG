@@ -49,8 +49,9 @@ class CrossAttentionFusion(nn.Module):
         self.norm_img1  = nn.LayerNorm(d_model)   # Before first cross-attn
         self.norm_clin  = nn.LayerNorm(d_model)   # Before first cross-attn
 
+        self.norm_img2= nn.LayerNorm(d_model)   # Before second attention
         self.norm2= nn.LayerNorm(d_model)   # Before second attention
-       
+        
         self.norm_ff    = nn.LayerNorm(d_model)   # Before feed-forward
         self.dropout    = nn.Dropout(dropout)
 
@@ -74,20 +75,21 @@ class CrossAttentionFusion(nn.Module):
             key_padding_mask = clincal_mask
         )
         
+        # textually informed visual tokens
         x = img_tokens + self.dropout(ca_out1)
 
         # ------------ Attention Pass 1 ------------------
-        k2 = v2 = self.norm_img1(img_tokens)
-        q2 = self.norm2(x)
+        q2 = v2 = self.norm_img2(img_tokens)
+        k2 = self.norm2(x)
 
-        # "clinically informed cross out tells image where to look"
+        # given what I know clinically find what image tokens I should pay more attention too. (refied image feature) pulling i
         ca_out2, attn_weights = self.cross_attn2(
             query=q2,
             key = k2,
             value = v2
         )
 
-        # residual conncetion
+        # residual conncetion (Combination of extually informed visual tokens + refined image features)
         x = x + self.dropout(ca_out2) # This essentially adds ca_out1 and ca_out2
 
         # --------- FFN ----------

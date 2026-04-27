@@ -214,7 +214,7 @@ class SwinEncoder(nn.Module):
         d_model: int = 512,
         dropout: float = 0.1,
         pretrained: bool = True,
-        freeze_layers: int = 8,
+        freeze_layers: int = 12,
 
         # FPN Configurations Dont change
         use_fpn: bool = True,
@@ -234,6 +234,7 @@ class SwinEncoder(nn.Module):
 
         # 2. Freezing the backbone 
         num_children = len(list(self.backbone.children()))
+        print(num_children)
         assert 0 <= freeze_layers <= num_children, (
             f"freeze_layers ({freeze_layers}) must be between 0 and {num_children}."
         )
@@ -293,20 +294,20 @@ class SwinEncoder(nn.Module):
         return self.proj(out)
 
 
-# # ── Usage ─────────────────────────────────────────────────────────────────────
-# if __name__ == "__main__":
-#     encoder = CNNEncoder(backbone="densenet121", d_model=512, freeze_layers=12)
+# ── Usage ─────────────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    encoder = SwinEncoder()
 
-#      # ── Parameter summary ─────────────────────────────────────────────────
-#     trainable     = sum(p.numel() for p in encoder.parameters() if p.requires_grad)
-#     non_trainable = sum(p.numel() for p in encoder.parameters() if not p.requires_grad)
-#     total         = trainable + non_trainable
+     # ── Parameter summary ─────────────────────────────────────────────────
+    trainable     = sum(p.numel() for p in encoder.parameters() if p.requires_grad)
+    non_trainable = sum(p.numel() for p in encoder.parameters() if not p.requires_grad)
+    total         = trainable + non_trainable
 
-#     print(f"\n── Parameter Summary ──")
-#     print(f"  Trainable:     {trainable:,}")
-#     print(f"  Non-trainable: {non_trainable:,}")
-#     print(f"  Total:         {total:,}")
+    print(f"\n── Parameter Summary ──")
+    print(f"  Trainable:     {trainable:,}")
+    print(f"  Non-trainable: {non_trainable:,}")
+    print(f"  Total:         {total:,}")
 
-#     x   = torch.randn(2, 3, 224, 224)
-#     out = encoder(x)
-#     print(out.shape)  # (2, 49, 512)
+    x   = torch.randn(2, 3, 224, 224)
+    out = encoder(x)
+    print(out.shape)  # (2, 49, 512)

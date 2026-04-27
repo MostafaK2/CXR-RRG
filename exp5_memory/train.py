@@ -287,14 +287,15 @@ def train_epoch(model, dataloader, optimizer, criterion, device, pos_weight=None
 
         optimizer.zero_grad()
 
-        report_logits, mlc_logits = model(img, clincal_text, src, labels)  # (B, T, V)
+        report_logits, mlc_logits = model(img, clincal_text, src, labels=None)  # (B, T, V)
         B, T, V = report_logits.shape
 
         # Loss calculation 
         gen_loss = criterion(report_logits.view(B * T, V), tgt.view(B * T))
-        mlc_loss = F.binary_cross_entropy_with_logits(
-            mlc_logits,   # raw logits — no sigmoid needed
-            labels,        # [B, num_diseases] float 0/1
+        mlc_loss = F.binary_cross_entropy(
+            mlc_logits,                    # already in [0,1] via softmax
+            labels.float(),
+            reduction='mean'
         )
         loss = gen_loss + mlc_loss
 
@@ -342,8 +343,11 @@ def evaluate(model, dataloader, criterion, device, pos_weight=None, alpha=0.3, l
                 report_logits.view(B * T, V), 
                 tgt.view(B * T)
             )
-            mlc_loss = F.binary_cross_entropy_with_logits(mlc_logits, labels, pos_weight=pos_weight)
-
+            mlc_loss = F.binary_cross_entropy(
+                mlc_logits,                    # already in [0,1] via softmax
+                labels.float(),
+                reduction='mean'
+            )
             loss = gen_loss + mlc_loss
             
             total_loss     += loss.item()
@@ -610,86 +614,86 @@ def main():
     # )
 
     # # ------------------------------------- TRAINING START ----------------------------------------------------------
-    # logger.info("======= " + "Starting Training " + ("=" * 60))
-    # for epoch in range(conf.EPOCHS):
-    #     if epoch > epoch_by_warmup:
-    #         warmup_scheduler = None
+    logger.info("======= " + "Starting Training " + ("=" * 60))
+    for epoch in range(conf.EPOCHS):
+        if epoch > epoch_by_warmup:
+            warmup_scheduler = None
         
-    #     train_nll, train_gen, train_mlc, train_ppl \
-    #           = train_epoch(model, train_dl, optimizer, criterion, DEVICE, 
-    #                         pos_weight=pos_weight,
-    #                         warmup_scheduler=warmup_scheduler, 
-    #                         clip_grad=conf.GRAD_CLIP, 
-    #                         alpha=conf.ALPHA)
-    #     valid_nll, valid_gen, valid_mlc, valid_ppl \
-    #           = evaluate(model,valid_dl,criterion,DEVICE,
-    #                      pos_weight=pos_weight,
-    #                      alpha=conf.ALPHA)
+        train_nll, train_gen, train_mlc, train_ppl \
+              = train_epoch(model, train_dl, optimizer, criterion, DEVICE, 
+                            pos_weight=pos_weight,
+                            warmup_scheduler=warmup_scheduler, 
+                            clip_grad=conf.GRAD_CLIP, 
+                            alpha=conf.ALPHA)
+        valid_nll, valid_gen, valid_mlc, valid_ppl \
+              = evaluate(model,valid_dl,criterion,DEVICE,
+                         pos_weight=pos_weight,
+                         alpha=conf.ALPHA)
         
-    #     # Early Stopping
-    #     if valid_nll < best_valid_loss:
-    #         best_valid_loss  = valid_nll
-    #         patience_counter = 0
+        # Early Stopping
+        if valid_nll < best_valid_loss:
+            best_valid_loss  = valid_nll
+            patience_counter = 0
 
 
-    #         torch.save({
-    #             'model_state_dict': model.state_dict(),
-    #             'hyperparams': {
-    #                 # Core
-    #                 'd_model':            conf.D_MODEL,
-    #                 'dropout':            conf.DROPOUT,
-    #                 # IMG encoder
-    #                 'img_enc_backbone':       conf.IMG_ENC_BACKBONE,
-    #                 'img_enc_freeze_layers':  conf.IMG_ENC_FREEZE_LAYER,
-    #                 'use_fpn':                conf.USE_FPN,
-    #                 'fpn_dim':                conf.FPN_DIM,
-    #                 'fpn_scale':              conf.FPN_SCALE,
+            torch.save({
+                'model_state_dict': model.state_dict(),
+                'hyperparams': {
+                    # Core
+                    'd_model':            conf.D_MODEL,
+                    'dropout':            conf.DROPOUT,
+                    # IMG encoder
+                    'img_enc_backbone':       conf.IMG_ENC_BACKBONE,
+                    'img_enc_freeze_layers':  conf.IMG_ENC_FREEZE_LAYER,
+                    'use_fpn':                conf.USE_FPN,
+                    'fpn_dim':                conf.FPN_DIM,
+                    'fpn_scale':              conf.FPN_SCALE,
 
-    #                 # Text encoder
-    #                 'bert_model':         conf.BERT_MODEL,
-    #                 'bert_freeze_layers': conf.BERT_FREEZE_LAYER,
-    #                 'bert_max_length':    conf.BERT_MAX_LENGTH,
-    #                 # Fusion
-    #                 'fusion_heads':       conf.FUSION_HEADS,
-    #                 'fusion_ff_dim':      conf.FUSION_FF_DIM,
-    #                 # Decoder
-    #                 'vocab_size':         conf.VOCAB_SIZE,
-    #                 'decoder_layers':     conf.DECODER_LAYERS,
-    #                 'decoder_heads':      conf.DECODER_N_HEADS,
-    #                 'decoder_ff_dim':     conf.DECODER_FF_DIM,
-    #                 'decoder_max_len':    conf.DECODER_MAX_LEN,
-    #                 'pad_id':             conf.PAD_ID,
+                    # Text encoder
+                    'bert_model':         conf.BERT_MODEL,
+                    'bert_freeze_layers': conf.BERT_FREEZE_LAYER,
+                    'bert_max_length':    conf.BERT_MAX_LENGTH,
+                    # Fusion
+                    'fusion_heads':       conf.FUSION_HEADS,
+                    'fusion_ff_dim':      conf.FUSION_FF_DIM,
+                    # Decoder
+                    'vocab_size':         conf.VOCAB_SIZE,
+                    'decoder_layers':     conf.DECODER_LAYERS,
+                    'decoder_heads':      conf.DECODER_N_HEADS,
+                    'decoder_ff_dim':     conf.DECODER_FF_DIM,
+                    'decoder_max_len':    conf.DECODER_MAX_LEN,
+                    'pad_id':             conf.PAD_ID,
 
-    #             },
-    #             'optimizer_state_dict': optimizer.state_dict(),
-    #             'epoch':                epoch,
-    #             'valid_loss':           best_valid_loss,
-    #         }, best_model_save_path)
+                },
+                'optimizer_state_dict': optimizer.state_dict(),
+                'epoch':                epoch,
+                'valid_loss':           best_valid_loss,
+            }, best_model_save_path)
 
-    #         print(f"    At epoch: {epoch+1}, best model saved at {best_model_save_path}")
-    #     else:
-    #         patience_counter += 1
+            logger.info(f"    At epoch: {epoch+1}, best model saved at {best_model_save_path}")
+        else:
+            patience_counter += 1
 
-    #     if patience_counter >= patience:
-    #         print(f"\nEarly stopping triggered after {epoch+1} epochs")
-    #         break
+        if patience_counter >= patience:
+            logger.info(f"\nEarly stopping triggered after {epoch+1} epochs")
+            break
         
-    #     if epoch > epoch_by_warmup:
-    #         cosine_scheduler.step()
+        if epoch > epoch_by_warmup:
+            cosine_scheduler.step()
             
-    #     # Metricss
-    #     tl_list.append(train_nll); vl_list.append(valid_nll)
-    #     tp_list.append(train_ppl);  vp_list.append(valid_ppl)
+        # Metricss
+        tl_list.append(train_nll); vl_list.append(valid_nll)
+        tp_list.append(train_ppl);  vp_list.append(valid_ppl)
 
-    #     # Log all three losses separately
-    #     logger.info(
-    #         "Epoch %d/%d | "
-    #         "Train Loss=%.4f  Gen=%.4f  MLC=%.4f  PPL=%.2f | "
-    #         "Valid Loss=%.4f  Gen=%.4f  MLC=%.4f  PPL=%.2f",
-    #         epoch + 1, conf.EPOCHS,
-    #         train_nll, train_gen, train_mlc, train_ppl,
-    #         valid_nll, valid_gen, valid_mlc, valid_ppl,
-    #     )
+        # Log all three losses separately
+        logger.info(
+            "Epoch %d/%d | "
+            "Train Loss=%.4f  Gen=%.4f  MLC=%.4f  PPL=%.2f | "
+            "Valid Loss=%.4f  Gen=%.4f  MLC=%.4f  PPL=%.2f",
+            epoch + 1, conf.EPOCHS,
+            train_nll, train_gen, train_mlc, train_ppl,
+            valid_nll, valid_gen, valid_mlc, valid_ppl,
+        )
 
 
 
@@ -719,7 +723,7 @@ def main():
         config, 
         conf.DEVICE,
         batch_size=conf.BATCH_SIZE,
-        num_samples=1000,
+        num_samples=None,
         labels_path=config["eval"]["reports_label_path"] # switch to reports_label_path
     )
 

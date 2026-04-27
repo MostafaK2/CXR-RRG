@@ -36,7 +36,7 @@ model:
   fusion_ff_dim: 768
   fusion_heads: 8
   img_enc_backbone: swin_s
-  img_enc_freeze_layer: 8
+  img_enc_freeze_layer: 2
   pad_id: 0
   use_fpn: false
   vocab_size: 16000
@@ -56,7 +56,7 @@ training:
   epochs: 25
   grad_clip: 1.0
   label_smoothing: 0
-  learning_rate: 1e-4
+  learning_rate: 0.000314
   patience: 3
-  warmup_steps: 100
-  weight_decay: 1e-4
+  warmup_steps: 20
+  weight_decay: 5e-4

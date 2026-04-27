@@ -1,67 +1,67 @@
 ===== TRAINING RESULTS =====
 
 ---- GENERAL ----
-Best Epoch: 9
-Best Validation Loss: inf
+Best Epoch: 6
+Best Validation Loss: 2.2106
 Model Class: Multimodal_Memory_Real
 
 ---- CONFIG ----
-<__main__.Config object at 0x7aed5704cce0>
+<__main__.Config object at 0x7ed4b7a0d9d0>
 
 ---- VALIDATION METRICS ----
-BLEU Scores: [0.29668253170201864, 0.17328631177490156, 0.11355019073344157, 0.07333826101941417]
-METEOR Score: 0.23184483346019402
+BLEU Scores: [0.27175645111496743, 0.17149356223240353, 0.11901213218329501, 0.0828873742314367]
+METEOR Score: 0.2686540676062481
 CheXbert Metrics:
-  Enlarged Cardiomediastinum_precision: 0.0
-  Enlarged Cardiomediastinum_recall: 0.0
-  Enlarged Cardiomediastinum_f1: 0.0
-  Cardiomegaly_precision: 0.1415
-  Cardiomegaly_recall: 0.1648
-  Cardiomegaly_f1: 0.1523
-  Lung Opacity_precision: 0.573
-  Lung Opacity_recall: 0.2698
-  Lung Opacity_f1: 0.3669
-  Lung Lesion_precision: 0.0
-  Lung Lesion_recall: 0.0
-  Lung Lesion_f1: 0.0
-  Edema_precision: 0.3014
-  Edema_recall: 0.1415
-  Edema_f1: 0.1926
-  Consolidation_precision: 0.0
-  Consolidation_recall: 0.0
-  Consolidation_f1: 0.0
+  Enlarged Cardiomediastinum_precision: 0.027
+  Enlarged Cardiomediastinum_recall: 0.0055
+  Enlarged Cardiomediastinum_f1: 0.0092
+  Cardiomegaly_precision: 0.1942
+  Cardiomegaly_recall: 0.2001
+  Cardiomegaly_f1: 0.1971
+  Lung Opacity_precision: 0.5504
+  Lung Opacity_recall: 0.5044
+  Lung Opacity_f1: 0.5264
+  Lung Lesion_precision: 0.0714
+  Lung Lesion_recall: 0.0097
+  Lung Lesion_f1: 0.0171
+  Edema_precision: 0.2944
+  Edema_recall: 0.2165
+  Edema_f1: 0.2495
+  Consolidation_precision: 0.0958
+  Consolidation_recall: 0.035
+  Consolidation_f1: 0.0512
   Pneumonia_precision: 0.0
   Pneumonia_recall: 0.0
   Pneumonia_f1: 0.0
-  Atelectasis_precision: 0.2
-  Atelectasis_recall: 0.0473
-  Atelectasis_f1: 0.0766
-  Pneumothorax_precision: 0.0526
-  Pneumothorax_recall: 0.0159
-  Pneumothorax_f1: 0.0244
-  Pleural Effusion_precision: 0.4986
-  Pleural Effusion_recall: 0.7114
-  Pleural Effusion_f1: 0.5863
-  Pleural Other_precision: 0.0
-  Pleural Other_recall: 0.0
-  Pleural Other_f1: 0.0
+  Atelectasis_precision: 0.1741
+  Atelectasis_recall: 0.1362
+  Atelectasis_f1: 0.1529
+  Pneumothorax_precision: 0.12
+  Pneumothorax_recall: 0.0783
+  Pneumothorax_f1: 0.0947
+  Pleural Effusion_precision: 0.4889
+  Pleural Effusion_recall: 0.614
+  Pleural Effusion_f1: 0.5444
+  Pleural Other_precision: 0.1111
+  Pleural Other_recall: 0.0131
+  Pleural Other_f1: 0.0234
   Fracture_precision: 0.0
   Fracture_recall: 0.0
   Fracture_f1: 0.0
-  Support Devices_precision: 0.7226
-  Support Devices_recall: 0.891
-  Support Devices_f1: 0.798
-  No Finding_precision: 0.0224
-  No Finding_recall: 0.1429
-  No Finding_f1: 0.0387
-  macro_precision: 0.1794
-  macro_recall: 0.1703
-  macro_f1: 0.1597
+  Support Devices_precision: 0.6839
+  Support Devices_recall: 0.7368
+  Support Devices_f1: 0.7094
+  No Finding_precision: 0.0413
+  No Finding_recall: 0.1061
+  No Finding_f1: 0.0594
+  macro_precision: 0.2038
+  macro_recall: 0.1897
+  macro_f1: 0.1882
 
 ---- TEST METRICS ----
 BLEU Scores: None
 METEOR Score: None
 
 ---- LOSSES ----
-Train Losses: []
-Validation Losses: []
+Train Losses: [3.291628172606912, 2.4571035620365436, 2.27453991656995, 2.15161641897591, 2.051036051438965, 1.9625914082044864, 1.87956205033164, 1.8012643877331538, 1.7275331322928422]
+Validation Losses: [2.5922240780708483, 2.3894584788415667, 2.307110719214705, 2.246316036783663, 2.2213879769906066, 2.2110664710066374, 2.21064051111838, 2.2204233219749048, 2.2367470569180368]

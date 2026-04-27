@@ -13,70 +13,61 @@ from exp2_multimodal.text_encoder  import ClinicalTextEncoder
 from exp2_multimodal.fusion_module import CrossAttentionFusion
 from exp2_multimodal.decoder import RRGDecoder
 
-
 class DiseaseKnowledgeModule(nn.Module):
-    def __init__(self, 
-        d_model: int        = 512, 
-        num_diseases: int   = 14, 
-        topk: int           = 3,
-        num_heads: int      = 8
-        ):
+    def __init__(self, d_model, num_diseases, num_states=2, num_heads=8, threshold=0.2):
         super().__init__()
-        self.topk = topk
-
+        self.threshold = threshold
         self.num_diseases = num_diseases
+        self.num_states = num_states  # k=2 (absent, present)
 
-        
-        self.disease_emb = nn.Parameter(torch.empty(num_diseases, d_model))
-        nn.init.xavier_uniform_(self.disease_emb.data)
-
-        self.state_embedding = nn.Embedding(2, d_model) # state embedding (2, d_model)
-        self.disease_pos_embedding = nn.Embedding(num_diseases, d_model) # positional embedding for (14, d_model)
-
-        self.mlc_head = nn.Sequential(
-            nn.Linear(d_model, d_model // 2),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(d_model // 2, num_diseases)
+        # Memory matrix — THIS is both classifier and knowledge store
+        # Shape: [num_diseases, num_states, d_model]
+        self.M = nn.Parameter(
+            torch.empty(num_diseases, num_states, d_model)
         )
+        nn.init.xavier_uniform_(self.M)
 
+        # Keep your disease attention for z enrichment
         self.disease_attn = nn.MultiheadAttention(
             d_model, num_heads=num_heads, batch_first=True
         )
-        self.gate = nn.Linear(d_model, d_model)
-    
-    def forward(self, z_img, z_fused, labels=None):
-        B      = z_fused.shape[0]
-        device = z_fused.device
 
-        # ── MLC prediction — linear head, unbounded logits ─────────────────
-        pooled     = z_img.mean(dim=1)     # [B, d]
-        mlc_logits = self.mlc_head(pooled)   # [B, D] — no compression issue
+    def forward(self, z_fused, labels=None):
+        B, S, d = z_fused.shape
 
-        # Disease position embeddings
-        disease_idx = torch.arange(self.num_diseases, device=device)
-        disease_idx = disease_idx.unsqueeze(0).expand(B, -1)  # [B, D]
-        pos_emb     = self.disease_pos_embedding(disease_idx)  # [B, D, d]
+        # Pool fused features — on Z not z_img
+        z_pooled = z_fused.mean(dim=1)          # [B, d]
 
-        # ── State embeddings ────────────────────────────────────────────────
-        if labels is not None:
-            state_idx = labels.long()                              # [B, D] — ground truth
-        else:
-            state_idx = (torch.sigmoid(mlc_logits) > 0.5).long() # [B, D] — predicted
+        # ── MLC via memory similarity (Li et al. Eq. 6) ──────────────────
+        # M_flat: [num_diseases * num_states, d]
+        M_flat = self.M.view(-1, d)
 
-        state_emb = self.state_embedding(state_idx)               # [B, D, d]
+        # Similarity scores
+        scores = z_pooled @ M_flat.T / (d ** 0.5)          # [B, num_diseases * num_states]
+        scores = scores.view(B, self.num_diseases, self.num_states)
 
-        # ── Combine disease_emb + state + position ────────────────────────────
-        K = self.disease_emb.unsqueeze(0) + state_emb + pos_emb    # [B, D, d]
+        # Softmax over states (present/absent) per disease
+        alpha = torch.softmax(scores, dim=-1)               # [B, num_diseases, num_states]
 
-        # Detach so gen loss cannot corrupt prototypes
-        z_know, _ = self.disease_attn(z_fused, K.detach(), K.detach())
+        # MLC logits — probability of "present" state (index 1)
+        mlc_probs = alpha[:, :, 1]                          # [B, num_diseases]
 
-        gate  = torch.sigmoid(self.gate(z_fused))
-        z_out = z_fused + gate * z_know
+        # ── Classification loss (Li et al. Eq. 7) ────────────────────────
+        # Returns raw probs for loss computation outside
+        # Loss = -(1/n) Σ y_ij * log(alpha_ij)
 
-        return z_out, mlc_logits
+        # ── Threshold for knowledge injection (Li et al.) ─────────────────
+        alpha_hat = (mlc_probs > self.threshold).float()    # [B, num_diseases] binary
 
+        # Knowledge embedding R = Σ α̂_ij · m_i (present state vectors)
+        M_present = self.M[:, 1, :]                         # [num_diseases, d]
+        R = alpha_hat @ M_present                           # [B, d]
+
+        # Enrich z_fused with knowledge
+        R_expanded = R.unsqueeze(1).expand(-1, S, -1)       # [B, S, d]
+        z_out = z_fused + R_expanded                        # [B, S, d]
+
+        return z_out, mlc_probs   # mlc_probs used for BCE loss outside
 
 class Multimodal_Memory_Real(nn.Module):
     def __init__(
@@ -150,10 +141,11 @@ class Multimodal_Memory_Real(nn.Module):
         )
 
         self.knowledge = DiseaseKnowledgeModule(
+            num_states = 2,
             d_model=d_model,
             num_diseases=14,
-            topk=5,
-            num_heads=fusion_heads
+            num_heads=fusion_heads, 
+            threshold=0.2,
         )
 
         # Decoder to generate reports
@@ -181,7 +173,7 @@ class Multimodal_Memory_Real(nn.Module):
         # Fuse img and text (cross attention) with res connection + gating
         z, _ = self.fusion(image_tokens, text_tokens, text_tok_mask) # [B, 49, d_model]
 
-        z, mlc_logits =  self.knowledge(image_tokens, z, labels)
+        z, mlc_logits =  self.knowledge(z, labels)
 
         # decoder outputs
         reports = self.decoder(z, caption_ids)
