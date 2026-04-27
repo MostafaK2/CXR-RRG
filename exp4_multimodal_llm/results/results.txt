@@ -1,62 +1,62 @@
 ===== TRAINING RESULTS =====
 
 ---- GENERAL ----
-Best Epoch: 0
+Best Epoch: 7
 Best Validation Loss: inf
 Model Class: Radiology_llm
 
 ---- CONFIG ----
-<__main__.Config object at 0x7d19e49d3740>
+<__main__.Config object at 0x75f956cebad0>
 
 ---- VALIDATION METRICS ----
-BLEU Scores: [0.0031500602254853605, 0.0005843221802178434, 0.0003609929569945064, 0.0002580002716062189]
-METEOR Score: 0.002617722922440887
+BLEU Scores: [0.09363755191323302, 0.04853837023075213, 0.0290320785676845, 0.016753105254045334]
+METEOR Score: 0.1755271642429012
 CheXbert Metrics:
-  Enlarged Cardiomediastinum_precision: 0.0
-  Enlarged Cardiomediastinum_recall: 0.0
-  Enlarged Cardiomediastinum_f1: 0.0
-  Cardiomegaly_precision: 0.0
-  Cardiomegaly_recall: 0.0
-  Cardiomegaly_f1: 0.0
-  Lung Opacity_precision: 0.0
-  Lung Opacity_recall: 0.0
-  Lung Opacity_f1: 0.0
+  Enlarged Cardiomediastinum_precision: 0.051
+  Enlarged Cardiomediastinum_recall: 0.0441
+  Enlarged Cardiomediastinum_f1: 0.0473
+  Cardiomegaly_precision: 0.1818
+  Cardiomegaly_recall: 0.0054
+  Cardiomegaly_f1: 0.0105
+  Lung Opacity_precision: 0.472
+  Lung Opacity_recall: 0.0127
+  Lung Opacity_f1: 0.0248
   Lung Lesion_precision: 0.0
   Lung Lesion_recall: 0.0
   Lung Lesion_f1: 0.0
-  Edema_precision: 0.0
-  Edema_recall: 0.0
-  Edema_f1: 0.0
-  Consolidation_precision: 0.0
-  Consolidation_recall: 0.0
-  Consolidation_f1: 0.0
+  Edema_precision: 0.2727
+  Edema_recall: 0.0113
+  Edema_f1: 0.0217
+  Consolidation_precision: 0.087
+  Consolidation_recall: 0.0028
+  Consolidation_f1: 0.0054
   Pneumonia_precision: 0.0
   Pneumonia_recall: 0.0
   Pneumonia_f1: 0.0
-  Atelectasis_precision: 0.0
-  Atelectasis_recall: 0.0
-  Atelectasis_f1: 0.0
-  Pneumothorax_precision: 0.0
-  Pneumothorax_recall: 0.0
-  Pneumothorax_f1: 0.0
-  Pleural Effusion_precision: 0.0
-  Pleural Effusion_recall: 0.0
-  Pleural Effusion_f1: 0.0
+  Atelectasis_precision: 0.1489
+  Atelectasis_recall: 0.0047
+  Atelectasis_f1: 0.0092
+  Pneumothorax_precision: 0.127
+  Pneumothorax_recall: 0.0087
+  Pneumothorax_f1: 0.0163
+  Pleural Effusion_precision: 0.5085
+  Pleural Effusion_recall: 0.0941
+  Pleural Effusion_f1: 0.1588
   Pleural Other_precision: 0.0
   Pleural Other_recall: 0.0
   Pleural Other_f1: 0.0
   Fracture_precision: 0.0
   Fracture_recall: 0.0
   Fracture_f1: 0.0
-  Support Devices_precision: 0.0
-  Support Devices_recall: 0.0
-  Support Devices_f1: 0.0
-  No Finding_precision: 0.0
-  No Finding_recall: 0.0
-  No Finding_f1: 0.0
-  macro_precision: 0.0
-  macro_recall: 0.0
-  macro_f1: 0.0
+  Support Devices_precision: 0.6766
+  Support Devices_recall: 0.8614
+  Support Devices_f1: 0.7579
+  No Finding_precision: 0.0395
+  No Finding_recall: 0.6667
+  No Finding_f1: 0.0746
+  macro_precision: 0.1832
+  macro_recall: 0.1223
+  macro_f1: 0.0805
 
 ---- TEST METRICS ----
 BLEU Scores: None

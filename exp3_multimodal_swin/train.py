@@ -8,7 +8,7 @@ import math
 import shutil
 
 from utils.config import load_config, _find_root
-from utils.metrics import evaluate_metric
+from utils.metrics import evaluate_metric, evaluate_metric_batched
 
 import torch
 import torch.nn as nn
@@ -445,16 +445,6 @@ def main():
     # CE Loss (prev)
     criterion = nn.CrossEntropyLoss(ignore_index=conf.PAD_ID, label_smoothing=conf.LABEL_SMOOTHING)
 
-    # # FOCAL LOSS
-    # # ── REPLACE with this ──────────────────────────────────────────────────
-    # vocab_weights = build_clinical_vocab_weights(tokenizer, DEVICE)
-    # criterion = ClinicalFocalLoss(
-    #     vocab_weights   = vocab_weights,
-    #     gamma           = 2.0,
-    #     ignore_index    = conf.PAD_ID,
-    #     label_smoothing = conf.LABEL_SMOOTHING   # reuses your existing config value
-    # )
-
     # Parameter Calculation
     total_params     = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -476,57 +466,30 @@ def main():
     ## CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED
     label_df = reorder_labels_df(config['eval']['reports_label_path'])
 
+    ds_kwargs = {
+        "df_labels": label_df,
+        "h5_path": conf.H5_PATH,
+        "vocab": word2idx,
+        "bos": conf.BOS,
+        "eos": conf.EOS,
+        "unk": conf.UNK,
+        "finding": conf.FINDING,
+        "impression": conf.IMPRESSION,
+        "decoder_max_len": conf.DECODER_MAX_LEN,
+        "tokenizer": tokenizer,
+        "transform": imagenet_transform,
+    }
+
     # Datasets
-    train_ds = CXRDataset(
-        df_reports = train_df,
-        df_labels  = label_df, 
-        h5_path    = conf.H5_PATH, 
-        vocab      = word2idx, 
-        bos        = conf.BOS, 
-        eos        = conf.EOS, 
-        unk        = conf.UNK,
-        finding    = conf.FINDING,
-        impression = conf.IMPRESSION,
-        decoder_max_len = conf.DECODER_MAX_LEN, 
-        tokenizer  = tokenizer, 
-        transform  = imagenet_transform
-    )
+    train_ds = CXRDataset(df_reports = train_df,**ds_kwargs)
+    valid_ds = CXRDataset(df_reports = valid_df, **ds_kwargs)
+    test_ds = CXRDataset(df_reports = test_df, **ds_kwargs)
 
-    valid_ds = CXRDataset(
-        df_reports = valid_df,
-        df_labels  = label_df, 
-        h5_path    = conf.H5_PATH, 
-        vocab      = word2idx, 
-        bos        = conf.BOS, 
-        eos        = conf.EOS, 
-        unk        = conf.UNK,
-        finding    = conf.FINDING,
-        impression = conf.IMPRESSION, 
-        decoder_max_len = conf.DECODER_MAX_LEN,  
-        tokenizer  = tokenizer, 
-        transform  = imagenet_transform
-    )
-
-    test_ds = CXRDataset(
-        df_reports = test_df,
-        df_labels  = label_df, 
-        h5_path    = conf.H5_PATH, 
-        vocab      = word2idx, 
-        bos        = conf.BOS, 
-        eos        = conf.EOS, 
-        unk        = conf.UNK, 
-        finding    = conf.FINDING,
-        impression = conf.IMPRESSION,
-        decoder_max_len = conf.DECODER_MAX_LEN,  
-        tokenizer  = tokenizer, 
-        transform  = imagenet_transform
-    )
-    
     # Dataloaders
     train_dl = DataLoader(train_ds, batch_size=conf.BATCH_SIZE, shuffle=True, collate_fn=collate_fn, num_workers=8)
     valid_dl = DataLoader(valid_ds, batch_size=conf.BATCH_SIZE, shuffle=False, collate_fn=collate_fn, num_workers=8)
     test_dl = DataLoader(test_ds, batch_size=conf.BATCH_SIZE, shuffle=False, collate_fn=collate_fn, num_workers=8)
-
+    logger.info(f"Datasets initialized | train: {len(train_ds):,} samples | valid: {len(valid_ds):,} samples | test: {len(test_ds):,} samples")
     
     # Scheduler (Warmup + Cosine Anealing): Warmup(~0 -> LR) -> Then -> CosineAnealing (LR  -> ~0)
     #  ----------------  Scheduler  -----------------
@@ -569,102 +532,87 @@ def main():
     #     save_path  = os.path.join(save_path, "lr_finder.png"),
     # )
 
-    # ------------------------------------- TRAINING START ----------------------------------------------------------
-    logger.info("======= " + "Starting Training " + ("=" * 60))
+    # # ------------------------------------- TRAINING START ----------------------------------------------------------
+    # logger.info("======= " + "Starting Training " + ("=" * 60))
     
-    for epoch in range(conf.EPOCHS):
-        if epoch > epoch_by_warmup:
-            warmup_scheduler = None
+    # for epoch in range(conf.EPOCHS):
+    #     if epoch > epoch_by_warmup:
+    #         warmup_scheduler = None
         
-        train_nll, train_ppl = train_epoch(model, train_dl, optimizer, criterion, DEVICE, warmup_scheduler=warmup_scheduler, clip_grad=conf.GRAD_CLIP)
-        valid_nll,  valid_ppl  = evaluate(model,valid_dl,criterion,DEVICE)
+    #     train_nll, train_ppl = train_epoch(model, train_dl, optimizer, criterion, DEVICE, warmup_scheduler=warmup_scheduler, clip_grad=conf.GRAD_CLIP)
+    #     valid_nll,  valid_ppl  = evaluate(model,valid_dl,criterion,DEVICE)
         
-        # Early Stopping
-        if valid_nll < best_valid_loss:
-            best_valid_loss  = valid_nll
-            patience_counter = 0
+    #     # Early Stopping
+    #     if valid_nll < best_valid_loss:
+    #         best_valid_loss  = valid_nll
+    #         patience_counter = 0
 
 
-            torch.save({
-                'model_state_dict': model.state_dict(),
-                'hyperparams': {
-                    # Core
-                    'd_model':            conf.D_MODEL,
-                    'dropout':            conf.DROPOUT,
-                    # IMG encoder
-                    'img_enc_backbone':       conf.IMG_ENC_BACKBONE,
-                    'img_enc_freeze_layers':  conf.IMG_ENC_FREEZE_LAYER,
-                    'use_fpn':                conf.USE_FPN,
-                    'fpn_dim':                conf.FPN_DIM,
-                    'fpn_scale':              conf.FPN_SCALE,
+    #         torch.save({
+    #             'model_state_dict': model.state_dict(),
+    #             'hyperparams': {
+    #                 # Core
+    #                 'd_model':            conf.D_MODEL,
+    #                 'dropout':            conf.DROPOUT,
+    #                 # IMG encoder
+    #                 'img_enc_backbone':       conf.IMG_ENC_BACKBONE,
+    #                 'img_enc_freeze_layers':  conf.IMG_ENC_FREEZE_LAYER,
+    #                 'use_fpn':                conf.USE_FPN,
+    #                 'fpn_dim':                conf.FPN_DIM,
+    #                 'fpn_scale':              conf.FPN_SCALE,
 
-                    # Text encoder
-                    'bert_model':         conf.BERT_MODEL,
-                    'bert_freeze_layers': conf.BERT_FREEZE_LAYER,
-                    'bert_max_length':    conf.BERT_MAX_LENGTH,
-                    # Fusion
-                    'fusion_heads':       conf.FUSION_HEADS,
-                    'fusion_ff_dim':      conf.FUSION_FF_DIM,
-                    # Decoder
-                    'vocab_size':         conf.VOCAB_SIZE,
-                    'decoder_layers':     conf.DECODER_LAYERS,
-                    'decoder_heads':      conf.DECODER_N_HEADS,
-                    'decoder_ff_dim':     conf.DECODER_FF_DIM,
-                    'decoder_max_len':    conf.DECODER_MAX_LEN,
-                    'pad_id':             conf.PAD_ID,
+    #                 # Text encoder
+    #                 'bert_model':         conf.BERT_MODEL,
+    #                 'bert_freeze_layers': conf.BERT_FREEZE_LAYER,
+    #                 'bert_max_length':    conf.BERT_MAX_LENGTH,
+    #                 # Fusion
+    #                 'fusion_heads':       conf.FUSION_HEADS,
+    #                 'fusion_ff_dim':      conf.FUSION_FF_DIM,
+    #                 # Decoder
+    #                 'vocab_size':         conf.VOCAB_SIZE,
+    #                 'decoder_layers':     conf.DECODER_LAYERS,
+    #                 'decoder_heads':      conf.DECODER_N_HEADS,
+    #                 'decoder_ff_dim':     conf.DECODER_FF_DIM,
+    #                 'decoder_max_len':    conf.DECODER_MAX_LEN,
+    #                 'pad_id':             conf.PAD_ID,
 
-                },
-                'optimizer_state_dict': optimizer.state_dict(),
-                'epoch':                epoch,
-                'valid_loss':           best_valid_loss,
-            }, best_model_save_path)
+    #             },
+    #             'optimizer_state_dict': optimizer.state_dict(),
+    #             'epoch':                epoch,
+    #             'valid_loss':           best_valid_loss,
+    #         }, best_model_save_path)
 
-            print(f"    At epoch: {epoch+1}, best model saved at {best_model_save_path}")
-        else:
-            patience_counter += 1
+    #         print(f"    At epoch: {epoch+1}, best model saved at {best_model_save_path}")
+    #     else:
+    #         patience_counter += 1
 
-        if patience_counter >= patience:
-            print(f"\nEarly stopping triggered after {epoch+1} epochs")
-            break
+    #     if patience_counter >= patience:
+    #         print(f"\nEarly stopping triggered after {epoch+1} epochs")
+    #         break
         
-        if epoch > epoch_by_warmup:
-            cosine_scheduler.step()
+    #     if epoch > epoch_by_warmup:
+    #         cosine_scheduler.step()
             
-        # Metricss
-        tl_list.append(train_nll); vl_list.append(valid_nll)
-        tp_list.append(train_ppl);  vp_list.append(valid_ppl)
+    #     # Metricss
+    #     tl_list.append(train_nll); vl_list.append(valid_nll)
+    #     tp_list.append(train_ppl);  vp_list.append(valid_ppl)
 
-        logger.info(
-            "Epoch %d/%d | Train Loss=%.4f | Train PPL=%.2f | Valid Loss=%.4f | Valid PPL=%.2f",
-            epoch + 1,
-            conf.EPOCHS,
-            train_nll,
-            train_ppl,
-            valid_nll,
-            valid_ppl,
-        )
+    #     logger.info(
+    #         "Epoch %d/%d | Train Loss=%.4f | Train PPL=%.2f | Valid Loss=%.4f | Valid PPL=%.2f",
+    #         epoch + 1,
+    #         conf.EPOCHS,
+    #         train_nll,
+    #         train_ppl,
+    #         valid_nll,
+    #         valid_ppl,
+    #     )
 
-    # ── Plots ─────────────────────────────────────────────────────────────────────
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 5))
-
-    ax1.plot(tl_list, label='Train Loss', marker='o')
-    ax1.plot(vl_list, label='Valid Loss', marker='s')
-    ax1.set_xlabel('Epoch'); ax1.set_ylabel('Loss')
-    ax1.set_title('Training and Validation Loss', fontweight='bold')
-    ax1.legend(); ax1.grid(True, alpha=0.3)
-
-    ax2.plot(tp_list, label='Train PPL', marker='o')
-    ax2.plot(vp_list, label='Valid PPL', marker='s')
-    ax2.set_xlabel('Epoch'); ax2.set_ylabel('Perplexity')
-    ax2.set_title('Training and Validation Perplexity', fontweight='bold')
-    ax2.legend(); ax2.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig(save_path + '/training_curves.png', dpi=150, bbox_inches='tight')
-    plt.show()
-    logger.info("Plots saved in /results/training_curves.png")
-
-    logger.info("Training & Evaluating completed!")
+    # # ── Plots ─────────────────────────────────────────────────────────────────────
+    # from utils.plotting import plot_train_validation_curve
+    # plot_train_validation_curve(tl_list=tl_list, vl_list=vl_list, tp_list=tp_list, vp_list=vp_list, save_path=save_path)
+    # logger.info(f"Plots saved in /{save_path}/training_curves.png")
+    # logger.info("Training & Evaluating completed!")
+        
         
     # # ── Evaluation Test & Valid Dataset ─────────────────────────────────────────────────────────────────────
     logger.info("======= " + "Starting Evaluating " + ("=" * 60))
@@ -677,7 +625,7 @@ def main():
 
 
     logger.info("======= Calculating Evaluation BLEU Scores =======")
-    cpbleus_valid, avg_valid_meteor, chexbert_res_valid = evaluate_metric(
+    cpbleus_valid, avg_valid_meteor, chexbert_res_valid = evaluate_metric_batched(
         model,
         valid_df, 
         valid_ds, 
@@ -685,6 +633,7 @@ def main():
         word2idx,
         config, 
         conf.DEVICE,
+        batch_size=conf.BATCH_SIZE,
         num_samples=1000,
         labels_path=config["eval"]["reports_label_path"] # switch to reports_label_path
     )

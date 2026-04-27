@@ -448,88 +448,88 @@ def main():
     # )
 
 
-    # ------------------------------------- TRAINING START ----------------------------------------------------------
-    logger.info("======= " + "Starting Training " + ("=" * 60))
+    # # ------------------------------------- TRAINING START ----------------------------------------------------------
+    # logger.info("======= " + "Starting Training " + ("=" * 60))
 
-    for epoch in range(conf.EPOCHS):
-        if epoch > epoch_by_warmup:
-            warmup_scheduler = None
+    # for epoch in range(conf.EPOCHS):
+    #     if epoch > epoch_by_warmup:
+    #         warmup_scheduler = None
         
-        train_nll, train_ppl = train_epoch(model, train_dl, optimizer, criterion, DEVICE, warmup_scheduler=warmup_scheduler, clip_grad=conf.GRAD_CLIP)
-        valid_nll,  valid_ppl  = evaluate(model,valid_dl,criterion,DEVICE)
+    #     train_nll, train_ppl = train_epoch(model, train_dl, optimizer, criterion, DEVICE, warmup_scheduler=warmup_scheduler, clip_grad=conf.GRAD_CLIP)
+    #     valid_nll,  valid_ppl  = evaluate(model,valid_dl,criterion,DEVICE)
         
-        # Early Stopping
-        if valid_nll < best_valid_loss:
-            best_valid_loss  = valid_nll
-            patience_counter = 0
+    #     # Early Stopping
+    #     if valid_nll < best_valid_loss:
+    #         best_valid_loss  = valid_nll
+    #         patience_counter = 0
 
 
-            torch.save({
-                'model_state_dict': model.state_dict(),
-                'hyperparams': {
-                    'img_enc_backbone'      : conf.IMG_ENC_BACKBONE,
-                    'img_enc_dim'           : conf.IMG_ENC_DIM,
-                    'img_enc_freeze_layer'  : conf.IMG_ENC_FREEZE_LAYER,
-                    'use_fpn'               : conf.USE_FPN,
-                    'fpn_scale'             : conf.FPN_DIM,
-                    'dropout'               : conf.DROPOUT,
-                    'max_new_tokens'        : conf.MAX_NEW_TOKEN,
-                    'model_name'            : conf.LLM_MODEL_NAME
+    #         torch.save({
+    #             'model_state_dict': model.state_dict(),
+    #             'hyperparams': {
+    #                 'img_enc_backbone'      : conf.IMG_ENC_BACKBONE,
+    #                 'img_enc_dim'           : conf.IMG_ENC_DIM,
+    #                 'img_enc_freeze_layer'  : conf.IMG_ENC_FREEZE_LAYER,
+    #                 'use_fpn'               : conf.USE_FPN,
+    #                 'fpn_scale'             : conf.FPN_DIM,
+    #                 'dropout'               : conf.DROPOUT,
+    #                 'max_new_tokens'        : conf.MAX_NEW_TOKEN,
+    #                 'model_name'            : conf.LLM_MODEL_NAME
 
-                },
-                'optimizer_state_dict': optimizer.state_dict(),
-                'epoch':                epoch,
-                'valid_loss':           best_valid_loss,
-            }, best_model_save_path)
+    #             },
+    #             'optimizer_state_dict': optimizer.state_dict(),
+    #             'epoch':                epoch,
+    #             'valid_loss':           best_valid_loss,
+    #         }, best_model_save_path)
 
-            print(f"    At epoch: {epoch+1}, best model saved at {best_model_save_path}")
-        else:
-            patience_counter += 1
+    #         print(f"    At epoch: {epoch+1}, best model saved at {best_model_save_path}")
+    #     else:
+    #         patience_counter += 1
 
-        if patience_counter >= patience:
-            print(f"\nEarly stopping triggered after {epoch+1} epochs")
-            break
+    #     if patience_counter >= patience:
+    #         print(f"\nEarly stopping triggered after {epoch+1} epochs")
+    #         break
         
-        if epoch > epoch_by_warmup:
-            cosine_scheduler.step()
+    #     if epoch > epoch_by_warmup:
+    #         cosine_scheduler.step()
             
-        # Metricss
-        tl_list.append(train_nll); vl_list.append(valid_nll)
-        tp_list.append(train_ppl);  vp_list.append(valid_ppl)
+    #     # Metricss
+    #     tl_list.append(train_nll); vl_list.append(valid_nll)
+    #     tp_list.append(train_ppl);  vp_list.append(valid_ppl)
 
-        logger.info(
-            "Epoch %d/%d | Train Loss=%.4f | Train PPL=%.2f | Valid Loss=%.4f | Valid PPL=%.2f",
-            epoch + 1,
-            conf.EPOCHS,
-            train_nll,
-            train_ppl,
-            valid_nll,
-            valid_ppl,
-        )
+    #     logger.info(
+    #         "Epoch %d/%d | Train Loss=%.4f | Train PPL=%.2f | Valid Loss=%.4f | Valid PPL=%.2f",
+    #         epoch + 1,
+    #         conf.EPOCHS,
+    #         train_nll,
+    #         train_ppl,
+    #         valid_nll,
+    #         valid_ppl,
+    #     )
         
 
 
-    # ── Plots ─────────────────────────────────────────────────────────────────────
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 5))
+    # # ── Plots ─────────────────────────────────────────────────────────────────────
+    # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 5))
 
-    ax1.plot(tl_list, label='Train Loss', marker='o')
-    ax1.plot(vl_list, label='Valid Loss', marker='s')
-    ax1.set_xlabel('Epoch'); ax1.set_ylabel('Loss')
-    ax1.set_title('Training and Validation Loss', fontweight='bold')
-    ax1.legend(); ax1.grid(True, alpha=0.3)
+    # ax1.plot(tl_list, label='Train Loss', marker='o')
+    # ax1.plot(vl_list, label='Valid Loss', marker='s')
+    # ax1.set_xlabel('Epoch'); ax1.set_ylabel('Loss')
+    # ax1.set_title('Training and Validation Loss', fontweight='bold')
+    # ax1.legend(); ax1.grid(True, alpha=0.3)
 
-    ax2.plot(tp_list, label='Train PPL', marker='o')
-    ax2.plot(vp_list, label='Valid PPL', marker='s')
-    ax2.set_xlabel('Epoch'); ax2.set_ylabel('Perplexity')
-    ax2.set_title('Training and Validation Perplexity', fontweight='bold')
-    ax2.legend(); ax2.grid(True, alpha=0.3)
+    # ax2.plot(tp_list, label='Train PPL', marker='o')
+    # ax2.plot(vp_list, label='Valid PPL', marker='s')
+    # ax2.set_xlabel('Epoch'); ax2.set_ylabel('Perplexity')
+    # ax2.set_title('Training and Validation Perplexity', fontweight='bold')
+    # ax2.legend(); ax2.grid(True, alpha=0.3)
 
-    plt.tight_layout()
-    plt.savefig(save_path + '/training_curves.png', dpi=150, bbox_inches='tight')
-    plt.show()
-    logger.info("Plots saved in /results/training_curves.png")
+    # plt.tight_layout()
+    # plt.savefig(save_path + '/training_curves.png', dpi=150, bbox_inches='tight')
+    # plt.show()
+    # logger.info("Plots saved in /results/training_curves.png")
 
-    logger.info("Training & Evaluating completed!")
+    # logger.info("Training & Evaluating completed!")
 
     # # ── Evaluation Test & Valid Dataset ─────────────────────────────────────────────────────────────────────
     logger.info("======= " + "Starting Evaluating " + ("=" * 60))
@@ -548,7 +548,7 @@ def main():
         dataset = valid_dataset, 
         config = config, 
         device = conf.DEVICE,
-        num_samples=5000,
+        num_samples=None,
         batch_size = conf.BATCH_SIZE,
         labels_path=config["eval"]["reports_label_path"] # switch to reports_label_path
     )

@@ -34,7 +34,9 @@ CHEXBERT_LABELS = [
 
 CLASS_MAPPING = {0: "Blank", 1: "Positive", 2: "Negative", 3: "Uncertain"}
                     #        Baseline                Main
-MODEL_CLASS_NAMES = ["ChestXrayReportGenerator", "ChestXrayMRG", "Multimodal_Memory"]
+MODEL_CLASS_NAMES = ["ChestXrayReportGenerator", "ChestXrayMRG", "Multimodal_Memory", "Multimodal_Memory_Real"]
+
+REPORT_SECTION_CHOSEN = "report_gen"
 
 
 # -------------------------------- Evaluation BLEU & METEOR helpers -------------------------------------
@@ -203,7 +205,8 @@ def evaluate_with_chesxbert(generated_texts, ground_truth_labels, bert_checkpoin
     results["macro_f1"]        = round(sum(f1s)        / len(f1s),        4)
     return results
 
-# ---------------------------------------------------------------
+# --------------------------------------------------- GENERATE REPORTS ------------
+# Generate reports
 @torch.no_grad()
 def generate_report(model, sample, tokenizer, word2idx, config, device="cuda"):
     """Generates a caption for a single image using greedy search."""
@@ -214,6 +217,7 @@ def generate_report(model, sample, tokenizer, word2idx, config, device="cuda"):
     if MODEL_CLASS_NAMES[0] == modelclassname: image, _, _ = sample; max_len = config["model"]["max_len"]
     elif MODEL_CLASS_NAMES[1] == modelclassname: image, _, _, clinical_hist, _ = sample; max_len = config["model"]["decoder_max_len"]
     elif MODEL_CLASS_NAMES[2] == modelclassname: image, _, _, clinical_hist, _ = sample; max_len = config["model"]["decoder_max_len"]
+    elif MODEL_CLASS_NAMES[3] == modelclassname: image, _, _, clinical_hist, _ = sample; max_len = config["model"]["decoder_max_len"] 
 
     ## \END MODULAR ACROSS DIFFERENT CLASSES CODE END
 
@@ -231,6 +235,7 @@ def generate_report(model, sample, tokenizer, word2idx, config, device="cuda"):
         if MODEL_CLASS_NAMES[0] == modelclassname: logits = model(image, src_tensor)
         elif MODEL_CLASS_NAMES[1] == modelclassname: logits = model(image, clinical_hist, src_tensor)
         elif MODEL_CLASS_NAMES[2] == modelclassname: logits = model(image, clinical_hist, src_tensor)
+        elif MODEL_CLASS_NAMES[3] == modelclassname: logits, labels = model(image, clinical_hist, src_tensor)
         ## \END MODULAR ACROSS DIFFERENT CLASSES CODE
         
         # Get next token (last position in sequence)
@@ -244,6 +249,130 @@ def generate_report(model, sample, tokenizer, word2idx, config, device="cuda"):
     report = tokenizer.decode(generated_ids, skip_special_tokens=True)
     return report
 
+@torch.no_grad()
+def generate_report_batched(model, samples, tokenizer, word2idx, config, device="cuda"):
+    """Generates a caption for a single image using greedy search."""
+    model.eval()
+     
+    ## \START MODULAR ACROSS DIFFERENT CLASSES CODE (DATA)
+    modelclassname = model.__class__.__name__
+    if MODEL_CLASS_NAMES[0] == modelclassname: images, _, _ = samples; max_len = config["model"]["max_len"]
+    elif MODEL_CLASS_NAMES[1] == modelclassname: images, clinical_hist, _ = samples; max_len = config["model"]["decoder_max_len"]
+    elif MODEL_CLASS_NAMES[2] == modelclassname: images, clinical_hist, _ = samples; max_len = config["model"]["decoder_max_len"]
+    elif MODEL_CLASS_NAMES[3] == modelclassname: images, clinical_hist, _ = samples; max_len = config["model"]["decoder_max_len"] 
+    ## \END MODULAR ACROSS DIFFERENT CLASSES CODE END
+
+    B = images.size(0)
+    images = images.to(device) # (1, 3, 224, 224)
+    
+    # Start with <BOS>
+    bos_id = word2idx[config['special_tokens']['bos']]
+    eos_id = word2idx[config['special_tokens']['eos']]
+    pad_id = eos_id # for finished sequence
+
+    generated = torch.full((B, 1), bos_id, dtype=torch.long, device=device)
+    finished  = torch.zeros(B, dtype=torch.bool, device=device)  # which rows are done
+
+
+    for _ in range(max_len):
+        ## \START MODULAR ACROSS DIFFERENT CLASSES CODE (LOGITS)
+        if MODEL_CLASS_NAMES[0] == modelclassname: logits = model(images, generated)
+        elif MODEL_CLASS_NAMES[1] == modelclassname: logits = model(images, clinical_hist, generated)
+        elif MODEL_CLASS_NAMES[2] == modelclassname: logits = model(images, clinical_hist, generated)
+        elif MODEL_CLASS_NAMES[3] == modelclassname: logits, _ = model(images, clinical_hist, generated)
+        ## \END MODULAR ACROSS DIFFERENT CLASSES CODE
+        
+        # Greedy: pick highest-logit token at the last position
+        next_tokens = logits[:, -1, :].argmax(dim=-1)  # (B,)
+
+        # Finished sequences emit PAD instead of a real token
+        next_tokens[finished] = pad_id
+
+        # Append to running sequence
+        generated = torch.cat([generated, next_tokens.unsqueeze(1)], dim=1)  # (B, T+1)
+
+        # Mark newly finished sequences
+        finished |= (next_tokens == eos_id)
+
+        if finished.all():
+            break
+        
+    # ── 4. Decode ───────────────────────────────────────────────────────────
+    reports = []
+    for i in range(B):
+        ids = generated[i].tolist()
+        reports.append(tokenizer.decode(ids, skip_special_tokens=True))
+
+    return reports
+
+
+
+# Evaluate Metric with batching
+def evaluate_metric_batched(model, 
+                    train_df, 
+                    dataset, 
+                    tokenizer, 
+                    word2idx, 
+                    config, 
+                    device, 
+                    num_samples=None, 
+                    labels_path = None,
+                    batch_size = 64):
+    
+    """Iterates through dataset and calculates average BLEU score."""
+    
+    model.eval()
+    label_df = reorder_labels_df(labels_path)
+
+    if num_samples is not None:
+        dataset = torch.utils.data.Subset(dataset, range(min(num_samples, len(dataset))))
+
+    loader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=8,
+        pin_memory=True,
+        collate_fn=collate_fn,
+    )
+
+    reference_list, generated_list, gt_labels = [], [], []
+    meteor_scores = []
+    global_i = 0
+
+    for batch in tqdm.tqdm(loader, desc="BLEU & METEOR Scoring"):
+            batch_generated = generate_report_batched(
+                model, batch, tokenizer, word2idx, config, device=device
+            )
+
+            batch_df  = train_df.iloc[global_i : global_i + len(batch_generated)]
+            refs      = batch_df[REPORT_SECTION_CHOSEN].tolist()
+            img_paths = batch_df["path_no_ext"].tolist()
+
+            reference_list.extend(refs)
+            generated_list.extend(batch_generated)
+            meteor_scores.extend(calculate_meteor_score(r, g) for r, g in zip(refs, batch_generated))
+            gt_labels.extend(_extract_ground_truth_labels(label_df, p) for p in img_paths)
+
+            global_i += len(batch_generated)
+
+    chexbert_res = evaluate_with_chesxbert(
+        generated_list, gt_labels,
+        config["eval"]["chestXbertModelWeights"],
+        batch_sz=64, device=device
+    )
+    cpbleus    = calculate_corpus_bleu(reference_list, generated_list)
+    avg_meteor = sum(meteor_scores) / len(meteor_scores)
+
+    return cpbleus, avg_meteor, chexbert_res
+
+
+
+
+
+
+
+# Evaluate Metric
 def evaluate_metric(model, 
                     train_df, 
                     dataset, 
@@ -271,7 +400,7 @@ def evaluate_metric(model,
         sample = dataset[i]
 
         # Refrence and Generated Texts (BLEU)
-        reference_text = train_df.iloc[i]["section_impression_gen"]
+        reference_text = train_df.iloc[i][REPORT_SECTION_CHOSEN]
         generated_text = generate_report(model, sample, tokenizer, word2idx, config, device=device)
         reference_list.append(reference_text)
         generated_list.append(generated_text)
@@ -295,69 +424,96 @@ def evaluate_metric(model,
     return cpbleus, avg_meteor, chexbert_res
 
 
-# ----llm
+## ------------------------------------- COALLATE FN FOR BATCHED 
+
+
+
+
+
+# --------------------------------------- Dataset Helper Function (EDIT) --------------------------------
+
 
 def collate_fn(batch):  
-    img_tens, report_ids, report_mask, clinical_history, labels = zip(*batch)
+    img_tens, _, _, clinical_text, labels = zip(*batch)
     img_tens = torch.stack(img_tens) # stack the images (B, 3, 224, 224)
-    report_ids = torch.stack(report_ids)
-    report_mask = torch.stack(report_mask)
-    # new stuff
-    clinical_history = list(clinical_history)
+    clinical_text = list(clinical_text)
     labels = torch.stack(labels)
+    return img_tens, clinical_text, labels
 
-    return img_tens, report_ids, report_mask, clinical_history, labels
 
-@torch.no_grad()
-def evaluate_metric_llm(model,
-                         df,
-                         dataset,
-                         config,
-                         device,
-                         labels_path=None,
-                         num_samples=None,
-                         batch_size=16):
-    model.eval()
-    label_df = reorder_labels_df(labels_path)
 
-    if num_samples is not None:
-        dataset = torch.utils.data.Subset(dataset, range(min(num_samples, len(dataset))))
 
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 
-    reference_list, generated_list = [], []
-    meteor_scores = []
-    gt_labels     = []
 
-    for batch_idx, batch in enumerate(tqdm.tqdm(loader, desc="Evaluating")):
+
+
+
+
+
+
+# # ----llm ----
+
+# def collate_fn(batch):  
+#     img_tens, report_ids, report_mask, clinical_history, labels = zip(*batch)
+#     img_tens = torch.stack(img_tens) # stack the images (B, 3, 224, 224)
+#     report_ids = torch.stack(report_ids)
+#     report_mask = torch.stack(report_mask)
+#     # new stuff
+#     clinical_history = list(clinical_history)
+#     labels = torch.stack(labels)
+
+#     return img_tens, report_ids, report_mask, clinical_history, labels
+
+# @torch.no_grad()
+# def evaluate_metric_llm(model,
+#                          df,
+#                          dataset,
+#                          config,
+#                          device,
+#                          labels_path=None,
+#                          num_samples=None,
+#                          batch_size=16):
+#     model.eval()
+#     label_df = reorder_labels_df(labels_path)
+
+#     if num_samples is not None:
+#         dataset = torch.utils.data.Subset(dataset, range(min(num_samples, len(dataset))))
+
+#     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
+
+#     reference_list, generated_list = [], []
+#     meteor_scores = []
+#     gt_labels     = []
+
+#     for batch_idx, batch in enumerate(tqdm.tqdm(loader, desc="Evaluating")):
         
-        images, report_ids, _, texts, _ = batch
-        images     = images.to(device)
-        report_ids = report_ids.to(device)  
-        generated = model.generate(images, texts)  # List[str] of length B
-        generated_list.extend(generated)
+#         images, report_ids, _, texts, _ = batch
+#         images     = images.to(device)
+#         report_ids = report_ids.to(device)  
+#         generated = model.generate(images, texts)  # List[str] of length B
+#         generated_list.extend(generated)
 
-        references = model.tokenizer.batch_decode(report_ids, skip_special_tokens=True)
-        reference_list.extend(references)
+#         references = model.tokenizer.batch_decode(report_ids, skip_special_tokens=True)
+#         reference_list.extend(references)
 
-        for ref, gen in zip(references, generated):
-            meteor_scores.append(calculate_meteor_score(ref, gen))
+#         for ref, gen in zip(references, generated):
+#             meteor_scores.append(calculate_meteor_score(ref, gen))
 
-        global_start = batch_idx * batch_size
-        for j in range(len(images)):
-            global_i = global_start + j
-            img_path = df.iloc[global_i]["path_no_ext"]
-            gt_labels.append(_extract_ground_truth_labels(label_df, img_path))
+#         global_start = batch_idx * batch_size
+#         for j in range(len(images)):
+#             global_i = global_start + j
+#             img_path = df.iloc[global_i]["path_no_ext"]
+#             gt_labels.append(_extract_ground_truth_labels(label_df, img_path))
 
-    chexbert_res = evaluate_with_chesxbert(
-        generated_list, gt_labels,
-        config["eval"]["chestXbertModelWeights"],
-        batch_sz=64, device=device
-    )
-    cpbleus    = calculate_corpus_bleu(reference_list, generated_list)
-    avg_meteor = sum(meteor_scores) / len(meteor_scores)
+#     chexbert_res = evaluate_with_chesxbert(
+#         generated_list, gt_labels,
+#         config["eval"]["chestXbertModelWeights"],
+#         batch_sz=64, device=device
+#     )
+#     cpbleus    = calculate_corpus_bleu(reference_list, generated_list)
+#     avg_meteor = sum(meteor_scores) / len(meteor_scores)
 
-    return cpbleus, avg_meteor, chexbert_res
+#     return cpbleus, avg_meteor, chexbert_res
 
 
 

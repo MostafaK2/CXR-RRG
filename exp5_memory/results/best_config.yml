@@ -1,6 +1,6 @@
 checkpoint:
   model_checkpoint_path: /home/public/mkamal/checkpoints
-  model_save_name: multimodal_densenet.pt
+  model_save_name: multimodal_memory.pt
   resume: null
   save_best_only: true
   save_dir: results
@@ -31,12 +31,15 @@ model:
   decoder_max_len: 256
   decoder_n_heads: 8
   dropout: 0.1
-  fusion_ff_dim: 1024
+  fpn_dim: 256
+  fpn_scale: 2
+  fusion_ff_dim: 768
   fusion_heads: 8
-  img_enc_backbone: densenet121
+  img_enc_backbone: swin_s
   img_enc_freeze_layer: 8
   pad_id: 0
-  vocab_size: 16597
+  use_fpn: false
+  vocab_size: 16000
 reproducibility:
   seed: 42
 special_tokens:
@@ -47,12 +50,13 @@ special_tokens:
   pad: <pad>
   unk: <unk>
 training:
+  alpha: 0.3
   batch_size: 64
   device: cuda
-  epochs: 30
+  epochs: 25
   grad_clip: 1.0
-  label_smoothing: 0.1
-  learning_rate: 0.000314
-  patience: 5
-  warmup_steps: 1300
+  label_smoothing: 0
+  learning_rate: 1e-4
+  patience: 3
+  warmup_steps: 100
   weight_decay: 1e-4

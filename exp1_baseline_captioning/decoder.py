@@ -23,7 +23,7 @@ class ChestXrayReportGenerator(nn.Module):
 
         self.emb = nn.Embedding(vocab_size, d_model, padding_idx=pad_id)
         self.pos = LearnablePositionalEmbedding(max_len=max_len, d_model=d_model)
-        self.img_enc = CNNEncoder(d_model=d_model, dropout=dropout, freeze_layers=freeze_enc_layers)
+        self.img_enc = CNNEncoder(backbone="densenet121", d_model=d_model, dropout=dropout, freeze_layers=freeze_enc_layers)
 
         decoder_layer = nn.TransformerDecoderLayer(
             d_model=d_model, nhead=n_heads, dim_feedforward=d_ff,
