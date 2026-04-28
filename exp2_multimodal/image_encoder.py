@@ -214,10 +214,10 @@ class SwinEncoder(nn.Module):
         d_model: int = 512,
         dropout: float = 0.1,
         pretrained: bool = True,
-        freeze_layers: int = 12,
+        freeze_layers: int = 9,
 
         # FPN Configurations Dont change
-        use_fpn: bool = True,
+        use_fpn: bool = False,
         fpn_dim: int = 256,
         fpn_scale: int = 2
     ):
@@ -228,41 +228,31 @@ class SwinEncoder(nn.Module):
         cfg = SWIN_REGISTRY[backbone]
         weights = cfg.weights if pretrained else None
 
-        # 1. Load the backbone
-        full_model = cfg.model_fn(weights=weights)
-        self.backbone = full_model.features # This contains the stages
+        model = cfg.model_fn(weights=weights)
+        self.backbone = nn.Sequential(
+            *list(model.features.children()), 
+            model.norm
+        ) # backbone with norm 9 layers total, includes Swin's own LayerNorm
 
+        swin_out_dim = self._find_dimensions_per_stage()
+
+        self.projection = nn.Sequential(
+            nn.Linear(swin_out_dim, d_model),
+            nn.LayerNorm(d_model), 
+            nn.Dropout(dropout)
+        )
+
+    
         # 2. Freezing the backbone 
         num_children = len(list(self.backbone.children()))
-        print(num_children)
-        assert 0 <= freeze_layers <= num_children, (
-            f"freeze_layers ({freeze_layers}) must be between 0 and {num_children}."
-        )
+        assert 0 <= freeze_layers <= num_children, (f"freeze_layers ({freeze_layers}) must be between 0 and {num_children}.")
         self._freeze_backbone(freeze_layers)
-
-        # ------------------------ 
-        self.d_model = d_model
-        self.dropout = nn.Dropout(dropout)
-        c_per_stage = self._find_dimensions_per_stage()
-        
-        # FPN BASED
-        self.use_fpn = use_fpn
-        if self.use_fpn:
-            self.fpn = FPN(scales=fpn_scale, fpn_dim=fpn_dim, d_model=d_model, c_per_stage=c_per_stage)
-        else: 
-            self.proj = nn.Linear(c_per_stage[7], d_model)
-        
     
     def _find_dimensions_per_stage(self):
-        STAGE_INDICES = [1, 3, 5, 7] 
-        c_per_stage = {}
         with torch.no_grad():
             dummy = torch.zeros(1, 3, 32, 32)
-            for i, layer in enumerate(self.backbone.children()):
-                dummy = layer(dummy)
-                if i in STAGE_INDICES:
-                    c_per_stage[i] = dummy.size(-1)
-        return c_per_stage
+            dims = self.backbone(dummy).shape[-1]     
+        return dims
 
     def _freeze_backbone(self, freeze_layers):
         # child 0-7
@@ -277,37 +267,28 @@ class SwinEncoder(nn.Module):
                 print(f"Layer {i} frozen and set to eval().")
     
     def forward(self, x):
-        
-        feature_to_out = {}
-        for i, layer in enumerate(self.backbone.children()):
-            x = layer(x)
-            if i == 5:
-                feature_to_out[i] = x  
-            if i == 7:
-                feature_to_out[i] = x
-                feat_s4 = x
-
-        if self.use_fpn:
-            return self.fpn(feature_to_out)
-        
-        out = feat_s4.reshape(feat_s4.size(0), -1, feat_s4.size(-1)) # [B, 49, 768]
-        return self.proj(out)
+        x = self.backbone(x)
+        x = x.reshape(x.size(0), -1, x.size(-1)) # [B, 49, 768]
+        x = self.projection(x)
+        return x
 
 
-# ── Usage ─────────────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    encoder = SwinEncoder()
+# # ── Usage ─────────────────────────────────────────────────────────────────────
+# if __name__ == "__main__":
+#     encoder = SwinEncoder(freeze_layers=9).to("cuda")
 
-     # ── Parameter summary ─────────────────────────────────────────────────
-    trainable     = sum(p.numel() for p in encoder.parameters() if p.requires_grad)
-    non_trainable = sum(p.numel() for p in encoder.parameters() if not p.requires_grad)
-    total         = trainable + non_trainable
+#      # ── Parameter summary ─────────────────────────────────────────────────
+#     trainable     = sum(p.numel() for p in encoder.parameters() if p.requires_grad)
+#     non_trainable = sum(p.numel() for p in encoder.parameters() if not p.requires_grad)
+#     total         = trainable + non_trainable
 
-    print(f"\n── Parameter Summary ──")
-    print(f"  Trainable:     {trainable:,}")
-    print(f"  Non-trainable: {non_trainable:,}")
-    print(f"  Total:         {total:,}")
+#     DEVICE = "cuda"
+#     print(f"\n── Parameter Summary ──")
+#     print(f"  Trainable:     {trainable:,}")
+#     print(f"  Non-trainable: {non_trainable:,}")
+#     print(f"  Total:         {total:,}")
 
-    x   = torch.randn(2, 3, 224, 224)
-    out = encoder(x)
-    print(out.shape)  # (2, 49, 512)
+#     with torch.no_grad():
+#         dummy = torch.randn(2, 3, 224, 224).to(DEVICE)
+#         out   = encoder(dummy)
+#         print(f"  SwinEncoder output norm: {out.norm():.4f}")

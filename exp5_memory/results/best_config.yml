@@ -51,12 +51,12 @@ special_tokens:
   unk: <unk>
 training:
   alpha: 0.3
-  batch_size: 64
+  batch_size: 2
   device: cuda
   epochs: 25
   grad_clip: 1.0
   label_smoothing: 0
   learning_rate: 0.000314
   patience: 3
-  warmup_steps: 20
+  warmup_steps: 1200
   weight_decay: 5e-4

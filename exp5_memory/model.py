@@ -69,7 +69,6 @@ class DiseaseKnowledgeModule(nn.Module):
         # print("scores_pooled: ",scores_pooled.shape)
         
         # ------------- SIMILARITY SCORING AND PATCH SCORING COMPLETE Z_FUSED AND DISESE EMB
-        # alpha weights
         alpha_overall = torch.softmax(scores_pooled, dim=-1) 
         alpha_per_patch = torch.softmax(score_per_patch.view(B, S, self.num_diseases, self.num_states), dim=-1) 
         # print("  pooled alpha: ",alpha_overall.shape)
@@ -78,7 +77,7 @@ class DiseaseKnowledgeModule(nn.Module):
         
         # For every patch select only present (1) for the 14 diseases
         mlc_probs_per_patch = alpha_per_patch[:, :, :, 1]; # print("  mlc_prob_per_patch: " , mlc_probs_per_patch.shape)  # (B, S, D)
-        mlc_probs = mlc_probs_per_patch.mean(dim=1); # print("  mlc props: " , mlc_probs.shape) # (B, diseases) 14 disesae pred for each image (B)
+        mlc_probs, _ = mlc_probs_per_patch.max(dim=1); # print("  mlc props: " , mlc_probs.shape) # (B, diseases) 14 disesae pred for each image (B)
         M_present = self.disease_knowledge[:, 1, :]; # print("  Memory present: ", M_present.shape) # [Disease, dimension] # selcts mem emb for each disease (present)
 
         R_per_patch = torch.einsum(

@@ -44,11 +44,11 @@ model:
 
 training:
   epochs: 25
-  batch_size: 64
+  batch_size: 2
   learning_rate: 3.14e-4
   weight_decay: 5e-4
   grad_clip: 1.0
-  warmup_steps: 20
+  warmup_steps: 1200
   patience: 3
   label_smoothing: 0
   device: cuda
