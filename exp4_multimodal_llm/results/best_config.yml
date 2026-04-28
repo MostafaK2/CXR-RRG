@@ -23,20 +23,17 @@ logging:
   run_name: null
 model:
   dropout: 0.1
-  fpn_dim: 256
-  fpn_scale: 2
   img_enc_backbone: swin_s
   img_enc_dim: 768
-  img_enc_freeze_layer: 8
+  img_enc_freeze_layer: 9
   max_new_tokens: 256
-  model_name: microsoft/BioGPT-Large
-  use_fpn: false
+  model_name: stanford-crfm/BioMedLM
 reproducibility:
   seed: 42
 training:
-  batch_size: 16
+  batch_size: 6
   device: cuda
-  epochs: 20
+  epochs: 4
   grad_clip: 1.0
   label_smoothing: 0
   learning_rate: 1e-4

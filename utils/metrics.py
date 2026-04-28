@@ -451,69 +451,69 @@ def collate_fn(batch):
 
 
 
-# # ----llm ----
+# ----llm ----
 
-# def collate_fn(batch):  
-#     img_tens, report_ids, report_mask, clinical_history, labels = zip(*batch)
-#     img_tens = torch.stack(img_tens) # stack the images (B, 3, 224, 224)
-#     report_ids = torch.stack(report_ids)
-#     report_mask = torch.stack(report_mask)
-#     # new stuff
-#     clinical_history = list(clinical_history)
-#     labels = torch.stack(labels)
+def collate_fn(batch):  
+    img_tens, report_ids, report_mask, clinical_history, labels = zip(*batch)
+    img_tens = torch.stack(img_tens) # stack the images (B, 3, 224, 224)
+    report_ids = torch.stack(report_ids)
+    report_mask = torch.stack(report_mask)
+    # new stuff
+    clinical_history = list(clinical_history)
+    labels = torch.stack(labels)
 
-#     return img_tens, report_ids, report_mask, clinical_history, labels
+    return img_tens, report_ids, report_mask, clinical_history, labels
 
-# @torch.no_grad()
-# def evaluate_metric_llm(model,
-#                          df,
-#                          dataset,
-#                          config,
-#                          device,
-#                          labels_path=None,
-#                          num_samples=None,
-#                          batch_size=16):
-#     model.eval()
-#     label_df = reorder_labels_df(labels_path)
+@torch.no_grad()
+def evaluate_metric_llm(model,
+                         df,
+                         dataset,
+                         config,
+                         device,
+                         labels_path=None,
+                         num_samples=None,
+                         batch_size=16):
+    model.eval()
+    label_df = reorder_labels_df(labels_path)
 
-#     if num_samples is not None:
-#         dataset = torch.utils.data.Subset(dataset, range(min(num_samples, len(dataset))))
+    if num_samples is not None:
+        dataset = torch.utils.data.Subset(dataset, range(min(num_samples, len(dataset))))
 
-#     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 
-#     reference_list, generated_list = [], []
-#     meteor_scores = []
-#     gt_labels     = []
+    reference_list, generated_list = [], []
+    meteor_scores = []
+    gt_labels     = []
 
-#     for batch_idx, batch in enumerate(tqdm.tqdm(loader, desc="Evaluating")):
+    for batch_idx, batch in enumerate(tqdm.tqdm(loader, desc="Evaluating")):
         
-#         images, report_ids, _, texts, _ = batch
-#         images     = images.to(device)
-#         report_ids = report_ids.to(device)  
-#         generated = model.generate(images, texts)  # List[str] of length B
-#         generated_list.extend(generated)
+        images, report_ids, _, texts, _ = batch
+        images     = images.to(device)
+        report_ids = report_ids.to(device)  
+        generated = model.generate(images, texts)  # List[str] of length B
+        generated_list.extend(generated)
 
-#         references = model.tokenizer.batch_decode(report_ids, skip_special_tokens=True)
-#         reference_list.extend(references)
+        references = model.tokenizer.batch_decode(report_ids, skip_special_tokens=True)
+        reference_list.extend(references)
 
-#         for ref, gen in zip(references, generated):
-#             meteor_scores.append(calculate_meteor_score(ref, gen))
+        for ref, gen in zip(references, generated):
+            meteor_scores.append(calculate_meteor_score(ref, gen))
 
-#         global_start = batch_idx * batch_size
-#         for j in range(len(images)):
-#             global_i = global_start + j
-#             img_path = df.iloc[global_i]["path_no_ext"]
-#             gt_labels.append(_extract_ground_truth_labels(label_df, img_path))
+        global_start = batch_idx * batch_size
+        for j in range(len(images)):
+            global_i = global_start + j
+            img_path = df.iloc[global_i]["path_no_ext"]
+            gt_labels.append(_extract_ground_truth_labels(label_df, img_path))
 
-#     chexbert_res = evaluate_with_chesxbert(
-#         generated_list, gt_labels,
-#         config["eval"]["chestXbertModelWeights"],
-#         batch_sz=64, device=device
-#     )
-#     cpbleus    = calculate_corpus_bleu(reference_list, generated_list)
-#     avg_meteor = sum(meteor_scores) / len(meteor_scores)
+    chexbert_res = evaluate_with_chesxbert(
+        generated_list, gt_labels,
+        config["eval"]["chestXbertModelWeights"],
+        batch_sz=64, device=device
+    )
+    cpbleus    = calculate_corpus_bleu(reference_list, generated_list)
+    avg_meteor = sum(meteor_scores) / len(meteor_scores)
 
-#     return cpbleus, avg_meteor, chexbert_res
+    return cpbleus, avg_meteor, chexbert_res
 
 
 
