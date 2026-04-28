@@ -19,10 +19,7 @@ model:
   # SwinT encoder
   img_enc_dim: 768
   img_enc_backbone: "swin_s" # swin_t, swin_s, swin_b
-  img_enc_freeze_layer: 8 # Completely frozen
-  use_fpn: False
-  fpn_dim: 256   # DONT CHANGE
-  fpn_scale: 2   # DONT CHANGE
+  img_enc_freeze_layer: 9 # Completely frozen
   dropout: 0.1
   max_new_tokens: 256
 
