@@ -20,7 +20,7 @@ model:
   d_model: 512
   
   decoder_n_heads: 8
-  decoder_ff_dim: 768
+  decoder_ff_dim: 2048
   decoder_max_len: 256
   decoder_layers: 4
   pad_id: 0
@@ -30,7 +30,7 @@ model:
 
   # Swin encoder
   img_enc_backbone: "swin_s" # swin_t, swin_s, swin_b
-  img_enc_freeze_layer: 8 # Completely frozen 8 (total)
+  img_enc_freeze_layer: 9 # Completely frozen 8 (total)
   use_fpn: False
   fpn_dim: 256   # DONT CHANGE
   fpn_scale: 2   # DONT CHANGE
@@ -44,9 +44,9 @@ model:
 
 training:
   epochs: 25
-  batch_size: 2
+  batch_size: 64
   learning_rate: 3.14e-4
-  weight_decay: 5e-4
+  weight_decay: 8.10e-4
   grad_clip: 1.0
   warmup_steps: 1200
   patience: 3

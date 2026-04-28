@@ -256,7 +256,7 @@ def generate_report_batched(model, samples, tokenizer, word2idx, config, device=
      
     ## \START MODULAR ACROSS DIFFERENT CLASSES CODE (DATA)
     modelclassname = model.__class__.__name__
-    if MODEL_CLASS_NAMES[0] == modelclassname: images, _, _ = samples; max_len = config["model"]["max_len"]
+    if MODEL_CLASS_NAMES[0] == modelclassname: images, _, _ = samples; max_len = config["model"]["decoder_max_len"]
     elif MODEL_CLASS_NAMES[1] == modelclassname: images, clinical_hist, _ = samples; max_len = config["model"]["decoder_max_len"]
     elif MODEL_CLASS_NAMES[2] == modelclassname: images, clinical_hist, _ = samples; max_len = config["model"]["decoder_max_len"]
     elif MODEL_CLASS_NAMES[3] == modelclassname: images, clinical_hist, _ = samples; max_len = config["model"]["decoder_max_len"] 

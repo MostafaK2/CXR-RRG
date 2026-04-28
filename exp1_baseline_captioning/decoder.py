@@ -16,14 +16,22 @@ class LearnablePositionalEmbedding(nn.Module):
         return x + self.pos(positions)
 
 class ChestXrayReportGenerator(nn.Module):
-    def __init__(self, vocab_size, d_model=128, n_heads=4, n_layers=2,
-                 max_len=64, d_ff=128, dropout=0.1, pad_id=0, freeze_enc_layers=8):
+    def __init__(self, vocab_size, 
+                 d_model=128, 
+                 n_heads=4, 
+                 n_layers=2,
+                 max_len=64,
+                d_ff=128, 
+                dropout=0.1, 
+                pad_id=0, 
+                freeze_enc_layers=8, 
+                backbone="densenet121"):
         super().__init__()
         self.pad_id = pad_id
 
         self.emb = nn.Embedding(vocab_size, d_model, padding_idx=pad_id)
         self.pos = LearnablePositionalEmbedding(max_len=max_len, d_model=d_model)
-        self.img_enc = CNNEncoder(backbone="densenet121", d_model=d_model, dropout=dropout, freeze_layers=freeze_enc_layers)
+        self.img_enc = CNNEncoder(backbone=backbone, d_model=d_model, dropout=dropout, freeze_layers=freeze_enc_layers)
 
         decoder_layer = nn.TransformerDecoderLayer(
             d_model=d_model, nhead=n_heads, dim_feedforward=d_ff,

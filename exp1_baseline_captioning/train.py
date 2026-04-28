@@ -26,10 +26,13 @@ from tokenizers.pre_tokenizers import Whitespace
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.config import load_config, _find_root
-from utils.metrics import evaluate_metric
+from utils.metrics import evaluate_metric, evaluate_metric_batched
 from utils.logginghelpers import log_chexbert_f1_summary, save_training_results
-from dataset import load_and_split, CXRDataset
+from exp2_multimodal.dataset import load_and_split, CXRDataset
 from decoder import ChestXrayReportGenerator
+
+import pandas as pd
+import numpy as np
 
 # ----------------------- LOGGING ---------------------
 
@@ -150,7 +153,13 @@ seed_everything(config["reproducibility"]["seed"])
 
 # --------------------------------  Preprocessing and splitting the data ------------------------------------
 
-BOS, EOS, PAD, UNK = config['special_tokens']['bos'], config['special_tokens']['eos'], config['special_tokens']['pad'], config['special_tokens']['unk']
+BOS        = config['special_tokens']['bos']
+EOS        = config['special_tokens']['eos']
+PAD        = config['special_tokens']['pad']
+UNK        = config['special_tokens']['unk']
+FINDING    = config['special_tokens']['finding']
+IMPRESSION = config['special_tokens']['impression']
+
 
 def build_tokenizer(train_df, caption_col, max_len, special_tokens, vocab_size=10000):
     """
@@ -158,7 +167,7 @@ def build_tokenizer(train_df, caption_col, max_len, special_tokens, vocab_size=1
     """
     logger.info("Training BPE tokenizer...")
 
-    pad_token, eos_token, unk_token, bos_token = special_tokens
+    _, _, _, unk_token, _, _ = special_tokens
 
     tokenizer = Tokenizer(BPE(unk_token=unk_token))
     tokenizer.pre_tokenizer = Whitespace()
@@ -167,8 +176,6 @@ def build_tokenizer(train_df, caption_col, max_len, special_tokens, vocab_size=1
 
     train_captions = train_df[caption_col].tolist()
     tokenizer.train_from_iterator(train_captions, trainer=trainer)
-
-    tokenizer.enable_truncation(max_length=max_len - 2)
 
     word2idx = tokenizer.get_vocab()
     logger.info(f"Vocabulary size: {len(word2idx)}")
@@ -181,17 +188,52 @@ word2idx, tokenizer = build_tokenizer(   # just trains the tokenizer
     train_df,
     caption_col="section_impression_gen",
     max_len=config["data"]["max_len"],
-    special_tokens=[config['special_tokens']['pad'], config['special_tokens']['eos'], config['special_tokens']['unk'], config['special_tokens']['bos']],
+    special_tokens=[PAD, BOS, EOS, UNK, FINDING, IMPRESSION],
     vocab_size=config['model']['vocab_size']
 )
 
 logger.info(f"Vocab size is {tokenizer.get_vocab_size()}")
-logger.info("Preprocessing complete and works")
+logger.info("Tokenizer has been completed")
+logger.info("Updating Configuration...")
 
 config["model"]["vocab_size"] = tokenizer.get_vocab_size()
-logger.info(f"{word2idx[EOS]}, {word2idx[BOS]}, {word2idx[UNK]}, {word2idx[PAD]}")
+config["model"]["pad_id"] = word2idx[PAD]
+logger.info("  configuration updated")
+logger.info(
+    f"PAD: {word2idx[PAD]}  "
+    f"BOS: {word2idx[BOS]}  "
+    f"EOS: {word2idx[EOS]}  "
+    f"UNK: {word2idx[UNK]}  "
+    f"FINDING: {word2idx[FINDING]}  "
+    f"IMPRESSION: {word2idx[IMPRESSION]}"
+)
+
+
 
 # --------------------------------------- Dataset Helper Function (EDIT) --------------------------------
+
+def reorder_labels_df(path: str) -> pd.DataFrame:
+    labels_df = pd.read_csv(path)
+    CHEXBERT_LABELS = [
+        "Enlarged Cardiomediastinum", "Cardiomegaly", "Lung Opacity",
+        "Lung Lesion", "Edema", "Consolidation", "Pneumonia", "Atelectasis",
+        "Pneumothorax", "Pleural Effusion", "Pleural Other", "Fracture",
+        "Support Devices", "No Finding",
+    ]
+    mapping = {
+        np.nan: 0,   # NaN -> 0
+        1.0: 1,      # 1.0 -> 1
+        0.0: 0,      # 0.0 -> 2
+        -1.0: 0      # -1.0 -> 3
+
+    }
+    for col in CHEXBERT_LABELS:
+        labels_df[col] = labels_df[col].map(mapping)
+    # Since map does not directly handle NaN keys well, fix NaNs separately
+    for col in CHEXBERT_LABELS:
+        labels_df[col] = labels_df[col].fillna(0).astype(int)
+
+    return labels_df
 
 def pad_sequence(sequences, max_len, pad_value): 
     batch_size = len(sequences)
@@ -202,9 +244,9 @@ def pad_sequence(sequences, max_len, pad_value):
         padded[i, :seq_len] = seq[:seq_len]
     return padded
 
-def collate_fn(batch):
-    img_tens, src_seqs, tgt_seqs  = zip(*batch)
-    img_tens = torch.stack(img_tens)
+def collate_fn(batch):  
+    img_tens, src_seqs, tgt_seqs, clinical_text, labels = zip(*batch)
+    img_tens = torch.stack(img_tens) # stack the images (B, 3, 224, 224)
 
     src_lens = torch.tensor([len(s) for s in src_seqs])
     tgt_lens = torch.tensor([len(t) for t in tgt_seqs])
@@ -214,15 +256,19 @@ def collate_fn(batch):
 
     padded_src = pad_sequence(src_seqs, max_src_len, word2idx[PAD])
     padded_tgt = pad_sequence(tgt_seqs, max_tgt_len, word2idx[PAD])
-    
-    return img_tens, padded_src, padded_tgt
+
+    # new stuff
+    clinical_text = list(clinical_text)
+    labels = torch.stack(labels)
+
+    return img_tens, padded_src, padded_tgt, clinical_text, labels
 
 # Training Helpers
 # ----------------- Training Helper functions ------------------- 
 def train_epoch(model, dataloader, optimizer, criterion, device,  clip_grad=1.0, warmup_scheduler=None):
     model.train()
     total_loss = 0.0
-    for img, src, tgt in tqdm.tqdm(dataloader,"train"):
+    for img, src, tgt, clincal_text, labels in tqdm.tqdm(dataloader,"train"):
         img, src, tgt = img.to(device), src.to(device), tgt.to(device)
         optimizer.zero_grad()
 
@@ -254,7 +300,7 @@ def evaluate(model, dataloader, criterion, device):
     total_loss = 0.0
     
     with torch.no_grad():
-        for img, src, tgt in tqdm.tqdm(dataloader, "Evaluating"):
+        for img, src, tgt, clincal_text, labels  in tqdm.tqdm(dataloader, "Evaluating"):
             img, src, tgt = img.to(device), src.to(device), tgt.to(device)
             logits = model(img, src)  # (B, T, V)
             B, T, V = logits.shape
@@ -274,26 +320,41 @@ def evaluate(model, dataloader, criterion, device):
 # Creating a config class for better readibility in the code
 class Config:
 
-    # Datasets Paths 
+    DEVICE = DEVICE
+
+    #  ------ Datasets Paths ------------------------------------------
     H5_PATH = config["data"]["h5_file"]
     CSV_PATH = config["data"]["csv_file"]
-    # Preprocessing configurations
-    # preprocess_max_len = config['data']['max_len']
-    min_freq = config['data']['min_freq']
-    bos, pad, eos, unk = config['special_tokens']['bos'], config['special_tokens']['pad'], config['special_tokens']['eos'], config['special_tokens']['unk']
 
-    # Model Parameters
+    MIN_FREQ = config['data']['min_freq']
+
+    # ---------- Special tokens --------------------------
+    BOS = config['special_tokens']['bos']
+    PAD = config['special_tokens']['pad']
+    EOS = config['special_tokens']['eos']
+    UNK = config['special_tokens']['unk']
+    FINDING = config['special_tokens']['finding']
+    IMPRESSION = config['special_tokens']['impression']
+    # findings, impresssoin add later if needed
+
+
+    # ------ Model Parameters -------------------------------------------
     VOCAB_SIZE = int(config['model']['vocab_size'])   # Will be set during training
     D_MODEL = int(config['model']['d_model'])
-    N_HEADS = int(config['model']['n_heads'])
-    N_LAYERS = int(config['model']['n_layers'])
-    MAX_LEN = int(config['model']['max_len'])  # To account for <bos>,<eos> tag +2
-    D_FF = int(config['model']['d_ff'])
-    DROPOUT = float(config['model']['dropout'])
-    PAD_ID = int(word2idx[pad])
-    FREEZE_ENC_LAYERS = int(config['model']['freeze_enc_layers'])
+        # Transformer Decoder
+    DECODER_N_HEADS = int(config['model']['decoder_n_heads'])
+    DECODER_FF_DIM = int(config['model']['decoder_ff_dim'])
+    DECODER_MAX_LEN = int(config['model']['decoder_max_len'])
+    DECODER_LAYERS = int(config['model']['decoder_layers'])
+    PAD_ID = int(config['model']['pad_id'])
 
-    # Hyperparameters
+        # IMG ENCODER
+    IMG_ENC_BACKBONE = str(config['model']['img_enc_backbone'])
+    IMG_ENC_FREEZE_LAYER = int(config['model']['img_enc_freeze_layer'])
+
+    DROPOUT = float(config['model']['dropout'])
+
+    # --------- Hyperparameters -----------------------------
     EPOCHS = int(config['training']['epochs'])
     BATCH_SIZE = int(config['training']['batch_size'])
     LR = float(config['training']['learning_rate'])
@@ -333,13 +394,15 @@ def main():
     model = ChestXrayReportGenerator(
         vocab_size=conf.VOCAB_SIZE, 
         d_model=conf.D_MODEL,
-        n_heads=conf.N_HEADS, 
-        n_layers=conf.N_LAYERS, 
-        max_len=conf.MAX_LEN, 
-        d_ff=conf.D_FF, 
+        n_heads=conf.DECODER_N_HEADS, 
+        n_layers=conf.DECODER_LAYERS, 
+        max_len=conf.DECODER_MAX_LEN, 
+        d_ff=conf.DECODER_FF_DIM, 
         dropout=conf.DROPOUT, 
         pad_id=conf.PAD_ID,
-        freeze_enc_layers=conf.FREEZE_ENC_LAYERS).to(DEVICE)
+        freeze_enc_layers=conf.IMG_ENC_FREEZE_LAYER,
+        backbone=conf.IMG_ENC_BACKBONE
+        ).to(DEVICE)
     
     optimizer = AdamW(model.parameters(), lr=conf.LR, weight_decay=conf.WEIGHT_DECAY)
     criterion = nn.CrossEntropyLoss(ignore_index=conf.PAD_ID, label_smoothing=conf.LABEL_SMOOTHING)
@@ -360,17 +423,28 @@ def main():
             std=[0.229, 0.224, 0.225]
         )
     ])
+
+    ## CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED CHANGE IF NEEDED
+    label_df = reorder_labels_df(config['eval']['reports_label_path'])
+    ds_kwargs = {
+            "df_labels": label_df,
+            "h5_path": conf.H5_PATH,
+            "vocab": word2idx,
+            "bos": conf.BOS,
+            "eos": conf.EOS,
+            "unk": conf.UNK,
+            "finding": conf.FINDING,
+            "impression": conf.IMPRESSION,
+            "decoder_max_len": conf.DECODER_MAX_LEN,
+            "tokenizer": tokenizer,
+            "transform": imagenet_transform,
+        }
+
     # Datasets
-    train_ds = CXRDataset(df=train_df, h5_path=conf.H5_PATH, vocab = word2idx, 
-                          bos=conf.bos, eos=conf.eos, unk=conf.unk, 
-                          tokenizer=tokenizer, transform=imagenet_transform)
-    valid_ds = CXRDataset(df=valid_df, h5_path=conf.H5_PATH, vocab = word2idx, 
-                          bos=conf.bos, eos=conf.eos, unk=conf.unk, 
-                          tokenizer=tokenizer, transform=imagenet_transform)
-    test_ds = CXRDataset(df=test_df, h5_path=conf.H5_PATH, vocab = word2idx, 
-                          bos=conf.bos, eos=conf.eos, unk=conf.unk, 
-                          tokenizer=tokenizer, transform=imagenet_transform)
-    
+    train_ds = CXRDataset(df_reports = train_df,**ds_kwargs)
+    valid_ds = CXRDataset(df_reports = valid_df, **ds_kwargs)
+    test_ds = CXRDataset(df_reports = test_df, **ds_kwargs)
+
     # Dataloaders
     train_dl = DataLoader(train_ds, batch_size=conf.BATCH_SIZE, shuffle=True, collate_fn=collate_fn, num_workers=8)
     valid_dl = DataLoader(valid_ds, batch_size=conf.BATCH_SIZE, shuffle=False, collate_fn=collate_fn, num_workers=8)
@@ -419,13 +493,14 @@ def main():
                 'hyperparams': {
                     'vocab_size':conf.VOCAB_SIZE,
                     'd_model': conf.D_MODEL,
-                    'n_heads': conf.N_HEADS,
-                    'n_layers': conf.N_LAYERS,
-                    'max_len': conf.MAX_LEN,
-                    'd_ff': conf.D_FF,
+                    'n_heads': conf.DECODER_N_HEADS,
+                    'n_layers': conf.DECODER_LAYERS,
+                    'max_len': conf.DECODER_MAX_LEN,
+                    'd_ff': conf.DECODER_FF_DIM,
                     'dropout': conf.DROPOUT,
                     'pad_id': conf.PAD_ID,
-                    'freeze_enc_layers': conf.FREEZE_ENC_LAYERS
+                    'freeze_enc_layers': conf.IMG_ENC_FREEZE_LAYER,
+                    'backbone': conf.IMG_ENC_BACKBONE
                 },
                 'optimizer_state_dict': optimizer.state_dict(),
                 'epoch': epoch,
@@ -468,7 +543,7 @@ def main():
 
 
     logger.info("======= Calculating Evaluation BLEU Scores =======")
-    cpbleus_valid, avg_valid_meteor, chexbert_res_valid = evaluate_metric(
+    cpbleus_valid, avg_valid_meteor, chexbert_res_valid = evaluate_metric_batched(
         model,
         valid_df, 
         valid_ds, 
@@ -476,6 +551,7 @@ def main():
         word2idx,
         config, 
         DEVICE, 
+        batch_size=conf.BATCH_SIZE,
         num_samples=None, # Set to e.g. 500 for faster testing
         labels_path=config["eval"]["reports_label_path"] # switch to reports_label_path
     )
@@ -530,8 +606,6 @@ def main():
     final_log = os.path.join(save_path, "train.log")
     if os.path.exists(temp_log):
         shutil.copy(temp_log, final_log)
-
-
 
 
 if __name__ == "__main__":

@@ -94,7 +94,7 @@ class DiseaseKnowledgeModule(nn.Module):
         gate_input = torch.cat([z_fused, R_per_patch], dim=-1)  # [B, S, 1024]
         gate        = self.gate(gate_input) 
         z_out = z_fused + gate * R_per_patch   # knowledge-enriched fused features
-        
+                
         return z_out, mlc_probs
     
 

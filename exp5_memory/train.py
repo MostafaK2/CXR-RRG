@@ -276,7 +276,6 @@ def reorder_labels_df(path: str) -> pd.DataFrame:
 def train_epoch(model, dataloader, optimizer, criterion, device, pos_weight=None, lamda = 5, alpha=0.3, clip_grad=1.0, warmup_scheduler=None):
     model.train()
 
-    LOG_FRQ = 1
 
     total_loss     = 0.0
     total_gen_loss = 0.0
@@ -292,10 +291,6 @@ def train_epoch(model, dataloader, optimizer, criterion, device, pos_weight=None
         report_logits, mlc_prob = model(img, clincal_text, src, labels=None)  # (B, T, V)
         B, T, V = report_logits.shape
 
-        # Loss calculation 
-        if LOG_FRQ % 10 == 0:
-            logger.info(f"minmax: {mlc_prob.min().item():.4f}, {mlc_prob.max().item():.4f}") 
-        LOG_FRQ+=1
         
         gen_loss = criterion(report_logits.view(B * T, V), tgt.view(B * T))
         mlc_loss = F.binary_cross_entropy(

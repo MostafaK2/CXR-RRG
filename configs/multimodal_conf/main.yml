@@ -1,10 +1,10 @@
 # configs/captioner-conf/main.yml
 checkpoint:
-  save_dir: results
+  save_dir: results_dense121
   save_best_only: true
   resume: null
   model_checkpoint_path: "/home/public/mkamal/checkpoints" 
-  model_save_name: multimodal_densenet.pt
+  model_save_name: multimodal_densenet121.pt
 
 data:
   csv_file: "/home/public/mkamal/dataset/filtered_data/train/train_cleaned.csv"  
@@ -16,7 +16,7 @@ data:
   test_sz: 0.1
 
 model:
-  vocab_size: 20000
+  vocab_size: 16000
   d_model: 512
   
   decoder_n_heads: 8
