@@ -204,7 +204,8 @@ class FPN(nn.Module):
 # 2 Stem + Stage 1.   56 x 56 (Texture/Edges)
 # 4 Above + Stage 2   28 x 28 (Local Shapes)
 # 6 Above + Stage 3   14 x 14 (Anatomy/Organs)
-# 8 Entire Backbone   7  x  7 (Feature Extraction Only)
+# 7 Entire Backbone   7  x  7 (Feature Extraction Only)
+# 9 normalizion
 
 class SwinEncoder(nn.Module):
 

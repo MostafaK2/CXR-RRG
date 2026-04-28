@@ -57,11 +57,10 @@ class CrossAttentionFusion(nn.Module):
 
 
     def forward(self, 
-        img_tokens: torch.Tensor, # [B, 49, d_model],
-        clincal_text_token: torch.Tensor, # [B, N, d_model], 
+        img_tokens: torch.Tensor, # [B, 49, d_model],  # normalized (post)
+        clincal_text_token: torch.Tensor, # [B, N, d_model], # normalized (post)
         clincal_mask: torch.Tensor # True = ignore pos
         ) -> torch.Tensor:
-
 
 
         # ------------ Attention Pass 1 ------------------
@@ -95,7 +94,6 @@ class CrossAttentionFusion(nn.Module):
         # --------- FFN ----------
         x = x + self.dropout(self.ffn(self.norm_ff(x)))
 
-
         return x, attn_weights # Z vector [B, 49, d_model]
 
 
@@ -103,7 +101,7 @@ class CrossAttentionFusion(nn.Module):
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    B        = 4
+    B        = 64
     N_img    = 49     # 7x7 from CNN encoder
     N_txt    = 6     # simulated token sequence length
 
