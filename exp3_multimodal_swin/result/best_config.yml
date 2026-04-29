@@ -1,9 +1,9 @@
 checkpoint:
   model_checkpoint_path: /home/public/mkamal/checkpoints
-  model_save_name: multimodal_densenet.pt
+  model_save_name: exp3_abl_16_h_fine.pt
   resume: null
   save_best_only: true
-  save_dir: results
+  save_dir: res_abl_16_h_fine
 data:
   csv_file: /home/public/mkamal/dataset/filtered_data/train/train_cleaned.csv
   h5_file: /home/public/mkamal/dataset/filtered_data/train/train.h5
@@ -22,21 +22,24 @@ logging:
   log_every: 50
   run_name: null
 model:
-  bert_freeze_layer: 12
+  bert_freeze_layer: 8
   bert_max_length: 128
   bert_model: emilyalsentzer/Bio_ClinicalBERT
   d_model: 512
   decoder_ff_dim: 2048
   decoder_layers: 6
   decoder_max_len: 256
-  decoder_n_heads: 8
+  decoder_n_heads: 16
   dropout: 0.1
-  fusion_ff_dim: 1024
+  fpn_dim: 256
+  fpn_scale: 2
+  fusion_ff_dim: 768
   fusion_heads: 8
-  img_enc_backbone: densenet121
-  img_enc_freeze_layer: 8
+  img_enc_backbone: swin_s
+  img_enc_freeze_layer: 4
   pad_id: 0
-  vocab_size: 16597
+  use_fpn: false
+  vocab_size: 16000
 reproducibility:
   seed: 42
 special_tokens:
@@ -49,10 +52,10 @@ special_tokens:
 training:
   batch_size: 64
   device: cuda
-  epochs: 30
+  epochs: 25
   grad_clip: 1.0
-  label_smoothing: 0.1
-  learning_rate: 0.000314
-  patience: 5
-  warmup_steps: 1300
-  weight_decay: 1e-4
+  label_smoothing: 0
+  learning_rate: 1e-4
+  patience: 4
+  warmup_steps: 2000
+  weight_decay: 5e-4

@@ -1,66 +1,53 @@
-# configs/captioner-conf/main.yml
 checkpoint:
-  save_dir: results_dense121
+  model_checkpoint_path: /home/public/mkamal/checkpoints
   model_save_name: baseline-dense121.pt
-  save_best_only: true
   resume: null
-  model_checkpoint_path: "/home/public/mkamal/checkpoints" 
-
+  save_best_only: true
+  save_dir: results_dense121
 data:
-  csv_file: "/home/public/mkamal/dataset/filtered_data/train/train_cleaned.csv"  
-  h5_file: "/home/public/mkamal/dataset/filtered_data/train/train.h5"  
+  csv_file: /home/public/mkamal/dataset/filtered_data/train/train_cleaned.csv
+  h5_file: /home/public/mkamal/dataset/filtered_data/train/train.h5
   max_len: 256
   min_freq: 3
-  valid_sz: 0.1
-  test_sz: 0.1
   num_workers: 4
-
+  test_sz: 0.1
+  valid_sz: 0.1
+eval:
+  chestXbertModelWeights: /home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/utils/chexbert.pth
+  findings_label_path: /home/public/mkamal/dataset/filtered_data/finding_labels.csv
+  impression_label_path: /home/public/mkamal/dataset/filtered_data/impression_labels.csv
+  reports_label_path: /home/public/mkamal/dataset/filtered_data/reports_label.csv
+logging:
+  eval_every: 1
+  log_every: 50
+  run_name: null
 model:
-  vocab_size: 16000
   d_model: 512
-
-  decoder_n_heads: 8
   decoder_ff_dim: 2048
-  decoder_max_len: 256
   decoder_layers: 6
-  pad_id: 0
-  
-  img_enc_backbone: "densenet121" # 12 in DenseNet 8 in resnet 9 in swin
-  img_enc_freeze_layer: 12 
-  
+  decoder_max_len: 256
+  decoder_n_heads: 8
   dropout: 0.1
-
-
-training:
-  epochs: 30
-  batch_size: 64
-  learning_rate: 3.14e-4
-  weight_decay: 1e-4
-  grad_clip: 1.0
-  warmup_steps: 1300
-  patience: 4
-  label_smoothing: 0
-  device: cuda
-
+  img_enc_backbone: densenet121
+  img_enc_freeze_layer: 12
+  pad_id: 0
+  vocab_size: 16000
 reproducibility:
   seed: 42
-
 special_tokens:
-  pad: <pad>
-  unk: <unk>
   bos: <bos>
   eos: <eos>
   finding: <finding>
   impression: <impression>
-
-logging:
-  run_name: null
-  log_every: 50
-  eval_every: 1
-
-eval: 
-  findings_label_path: "/home/public/mkamal/dataset/filtered_data/finding_labels.csv"
-  impression_label_path: "/home/public/mkamal/dataset/filtered_data/impression_labels.csv"
-  reports_label_path: "/home/public/mkamal/dataset/filtered_data/reports_label.csv"
-  chestXbertModelWeights: "/home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/utils/chexbert.pth"
-  
+  pad: <pad>
+  unk: <unk>
+training:
+  batch_size: 64
+  device: cuda
+  epochs: 30
+  grad_clip: 1.0
+  label_smoothing: 0
+  learning_rate: 0.000314
+  patience: 4
+  warmup_steps: 1300
+  weight_decay: 1e-4

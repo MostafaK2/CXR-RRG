@@ -55,7 +55,7 @@ def setup_nltk_resources():
             nltk.download(package_name)
 
 
-## ---------------------------------------------- BLEU AND METEOR SCORING -------------------------------------- ##
+## ---------------------------------------------- METRICS CALCULATORS -------------------------------------- ##
 
 def calculate_sentence_bleu_score(reference, hypothesis):
     """
@@ -95,7 +95,7 @@ def calculate_corpus_bleu(references, hypotheses):
     bleu4 = corpus_bleu(refs_tokenized, hyps_tokenized, weights=(0.25, 0.25, 0.25, 0.25), smoothing_function=smoothie)
     return [bleu1, bleu2, bleu3, bleu4]
     
-# -------------------------------------------- ChestXbert F1 Scoring -----------------------------------------
+# ------- ChestXbert F1 Scoring -----------------------
 def _extract_ground_truth_labels(label_df, img_path):
     match = label_df[label_df["path_no_ext"] == img_path]
     if match.empty:
@@ -369,9 +369,6 @@ def evaluate_metric_batched(model,
 
 
 
-
-
-
 # Evaluate Metric
 def evaluate_metric(model, 
                     train_df, 
@@ -441,29 +438,6 @@ def collate_fn(batch):
     return img_tens, clinical_text, labels
 
 
-
-
-
-
-
-
-
-
-
-
-# ----llm ----
-
-def collate_fn(batch):  
-    img_tens, report_ids, report_mask, clinical_history, labels = zip(*batch)
-    img_tens = torch.stack(img_tens) # stack the images (B, 3, 224, 224)
-    report_ids = torch.stack(report_ids)
-    report_mask = torch.stack(report_mask)
-    # new stuff
-    clinical_history = list(clinical_history)
-    labels = torch.stack(labels)
-
-    return img_tens, report_ids, report_mask, clinical_history, labels
-
 @torch.no_grad()
 def evaluate_metric_llm(model,
                          df,
@@ -474,6 +448,17 @@ def evaluate_metric_llm(model,
                          num_samples=None,
                          batch_size=16):
     model.eval()
+    # ----llm ----
+
+    def collate_fn(batch):  
+        img_tens, report_ids, report_mask, clinical_history, labels = zip(*batch)
+        img_tens = torch.stack(img_tens) # stack the images (B, 3, 224, 224)
+        report_ids = torch.stack(report_ids)
+        report_mask = torch.stack(report_mask)
+        # new stuff
+        clinical_history = list(clinical_history)
+        labels = torch.stack(labels)
+        return img_tens, report_ids, report_mask, clinical_history, labels
     label_df = reorder_labels_df(labels_path)
 
     if num_samples is not None:
@@ -516,5 +501,232 @@ def evaluate_metric_llm(model,
     return cpbleus, avg_meteor, chexbert_res
 
 
+# ------------------------------------------------------ERROR ANALYSIS HELPERS. -------------------
+
+from collections import Counter
+import json
+import os
+import numpy as np
+
+def generation_diversity(generated_list, save_dir=None):
+    print("\n" + "=" * 60)
+    print("ANALYSIS 2: Generation Diversity")
+    print("=" * 60)
+ 
+    total      = len(generated_list)
+    unique     = len(set(generated_list))
+    uniqueness = 100 * unique / total
+ 
+    all_words    = " ".join(generated_list).split()
+    unique_words = len(set(all_words))
+    total_words  = len(all_words)
+    ttr          = unique_words / total_words if total_words > 0 else 0.0
+ 
+    lengths = [len(r.split()) for r in generated_list]
+    counter = Counter(generated_list)
+    top5    = counter.most_common(5)
+ 
+    print(f"\nTotal reports:      {total}")
+    print(f"Unique reports:     {unique} ({uniqueness:.1f}%)")
+    print(f"Type-Token Ratio:   {ttr:.4f}")
+    print(f"Avg length:         {np.mean(lengths):.1f} words (std={np.std(lengths):.1f})")
+ 
+    if uniqueness < 20:
+        print("❌ Severe mode collapse")
+    elif uniqueness < 50:
+        print("⚠️  Moderate collapse")
+    else:
+        print("✅ Reasonable diversity")
+ 
+    print(f"\nTop 5 repeated:")
+    for report, count in top5:
+        print(f"  [{count:4d}x | {100*count/total:4.1f}%] {report[:120]}")
+ 
+    results = {
+        "total":             total,
+        "unique":            unique,
+        "uniqueness_pct":    uniqueness,
+        "type_token_ratio":  ttr,
+        "avg_length":        float(np.mean(lengths)),
+        "std_length":        float(np.std(lengths)),
+        "top5_repeated":     [(r[:120], c) for r, c in top5],
+    }
+ 
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        with open(os.path.join(save_dir, "generation_diversity.json"), "w") as f:
+            json.dump(results, f, indent=2)
+ 
+    return results
+ 
+
+ # Evaluate Metric with batching
+def evaluate_metric_batched_for_error_analysis(model, 
+                    train_df, 
+                    dataset, 
+                    tokenizer, 
+                    word2idx, 
+                    config, 
+                    device, 
+                    num_samples=None, 
+                    labels_path = None,
+                    batch_size = 64):
+    
+    """Iterates through dataset and calculates average BLEU score."""
+    
+    model.eval()
+    label_df = reorder_labels_df(labels_path)
+
+    if num_samples is not None:
+        dataset = torch.utils.data.Subset(dataset, range(min(num_samples, len(dataset))))
+
+    loader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=8,
+        pin_memory=True,
+        collate_fn=collate_fn,
+    )
+
+    reference_list, generated_list, gt_labels = [], [], []
+    meteor_scores = []
+    global_i = 0
+
+    for batch in tqdm.tqdm(loader, desc="BLEU & METEOR Scoring"):
+            batch_generated = generate_report_batched(
+                model, batch, tokenizer, word2idx, config, device=device
+            )
+
+            batch_df  = train_df.iloc[global_i : global_i + len(batch_generated)]
+            refs      = batch_df[REPORT_SECTION_CHOSEN].tolist()
+            img_paths = batch_df["path_no_ext"].tolist()
+
+            reference_list.extend(refs)
+            generated_list.extend(batch_generated)
+            meteor_scores.extend(calculate_meteor_score(r, g) for r, g in zip(refs, batch_generated))
+            gt_labels.extend(_extract_ground_truth_labels(label_df, p) for p in img_paths)
+
+            global_i += len(batch_generated)
+
+    chexbert_res = evaluate_with_chesxbert(
+        generated_list, gt_labels,
+        config["eval"]["chestXbertModelWeights"],
+        batch_sz=64, device=device
+    )
+    cpbleus    = calculate_corpus_bleu(reference_list, generated_list)
+    avg_meteor = sum(meteor_scores) / len(meteor_scores)
+
+    return cpbleus, avg_meteor, chexbert_res, generated_list, reference_list, gt_labels
 
 
+
+
+# HALUCINATE RATES
+LABEL_KEYWORDS = {
+    "Enlarged Cardiomediastinum": ["enlarged cardiomediastinum", "widened mediastinum"],
+    "Cardiomegaly":               ["cardiomegaly", "enlarged heart", "cardiac enlargement"],
+    "Lung Opacity":               ["opacity", "opacification", "haziness"],
+    "Lung Lesion":                ["lesion", "nodule", "mass"],
+    "Edema":                      ["edema", "oedema", "vascular congestion"],
+    "Consolidation":              ["consolidation"],
+    "Pneumonia":                  ["pneumonia", "pneumonic"],
+    "Atelectasis":                ["atelectasis", "atelectatic"],
+    "Pneumothorax":               ["pneumothorax"],
+    "Pleural Effusion":           ["effusion", "pleural fluid"],
+    "Pleural Other":              ["pleural thickening", "pleural disease"],
+    "Fracture":                   ["fracture", "rib fracture"],
+    "Support Devices":            ["support device", "pacemaker", "tube", "line", "catheter"],
+    "No Finding":                 ["no acute", "no finding", "unremarkable", "normal"],
+}
+ 
+ 
+def _extract_mentions(report_text):
+    report_lower = report_text.lower()
+    mentioned = set()
+    for label, keywords in LABEL_KEYWORDS.items():
+        for kw in keywords:
+            if kw in report_lower:
+                mentioned.add(label)
+                break
+    return mentioned
+ 
+ 
+def _extract_positive_gt_labels(gt_label_dict):
+    if gt_label_dict is None:
+        return set()
+    return {label for label, val in gt_label_dict.items() if val == 1}
+ 
+ 
+def hallucination_rate(generated_list, gt_labels, save_dir=None):
+    print("\n" + "=" * 60)
+    print("ANALYSIS 1: Hallucination Rate")
+    print("=" * 60)
+ 
+    per_label_hallucinations = {label: 0 for label in CHEXBERT_LABELS}
+    per_label_generated      = {label: 0 for label in CHEXBERT_LABELS}
+    hallucination_rates      = []
+    any_hallucination        = []
+    examples                 = []
+ 
+    for gen, gt in zip(generated_list, gt_labels):
+        if gt is None:
+            continue
+ 
+        gen_mentions = _extract_mentions(gen)
+        gt_positives = _extract_positive_gt_labels(gt)
+        hallucinated = gen_mentions - gt_positives
+ 
+        for label in gen_mentions:
+            per_label_generated[label] += 1
+        for label in hallucinated:
+            per_label_hallucinations[label] += 1
+ 
+        rate = len(hallucinated) / len(gen_mentions) if len(gen_mentions) > 0 else 0.0
+        hallucination_rates.append(rate)
+        any_hallucination.append(1 if len(hallucinated) > 0 else 0)
+ 
+        if len(hallucinated) > 0 and len(examples) < 10:
+            examples.append({
+                "generated":    gen[:200],
+                "gt_positives": list(gt_positives),
+                "hallucinated": list(hallucinated),
+            })
+ 
+    mean_rate      = float(np.mean(hallucination_rates))
+    pct_any_halluc = float(np.mean(any_hallucination)) * 100
+ 
+    print(f"\nSamples evaluated:                {len(hallucination_rates)}")
+    print(f"Mean hallucination rate:          {mean_rate*100:.1f}%")
+    print(f"Reports with any hallucination:   {pct_any_halluc:.1f}%")
+ 
+    print(f"\n{'Label':<30} {'Generated':>10} {'Hallucinated':>13} {'Rate':>8}")
+    print("-" * 65)
+ 
+    per_label_results = {}
+    for label in CHEXBERT_LABELS:
+        g = per_label_generated[label]
+        h = per_label_hallucinations[label]
+        r = h / g if g > 0 else 0.0
+        per_label_results[label] = {"generated": g, "hallucinated": h, "rate": round(r, 4)}
+        print(f"{label:<30} {g:>10} {h:>13} {r:>8.3f}")
+ 
+    print(f"\nWorst examples:")
+    for i, ex in enumerate(examples):
+        print(f"\n  [{i+1}] Hallucinated: {ex['hallucinated']}")
+        print(f"       GT positives: {ex['gt_positives']}")
+        print(f"       Generated:    {ex['generated'][:150]}")
+ 
+    results = {
+        "mean_hallucination_rate":          mean_rate,
+        "pct_reports_with_hallucination":   pct_any_halluc,
+        "per_label":                        per_label_results,
+        "examples":                         examples,
+    }
+ 
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        with open(os.path.join(save_dir, "hallucination_rate.json"), "w") as f:
+            json.dump(results, f, indent=2)
+ 
+    return results

@@ -7,7 +7,7 @@ import logging
 import shutil
 
 from utils.config import load_config, _find_root
-from utils.metrics import evaluate_metric
+from utils.metrics import evaluate_metric_batched, evaluate_metric_batched_for_error_analysis, generation_diversity, hallucination_rate
 
 import torch
 import numpy as np
@@ -114,7 +114,7 @@ def get_args():
     ap.add_argument('--split',       type=str,  default='valid',
                     choices=['valid', 'test', 'both'],
                     help='Which split to evaluate')
-    ap.add_argument('--num_samples', type=int,  default=1000,
+    ap.add_argument('--num_samples', type=int,  default=None,
                     help='Number of samples for CheXBert eval (ignored with --rare_only)')
     ap.add_argument('--device',      type=str,  default=None,
                     help='cuda / cpu / mps')
@@ -274,7 +274,8 @@ def main():
     logger.info(f"Checkpoint: epoch {ckpt['epoch']+1}, "
                 f"valid loss {ckpt['valid_loss']:.4f}")
 
-    # ── Evaluate ──────────────────────────────────────────────────────────
+    # ── Evaluate ──────────────────────────────────────────────────────────---------------------------------------------
+
     split      = args.split
     n_valid    = len(valid_df) if args.rare_only else args.num_samples
     n_test     = len(test_df)  if args.rare_only else args.num_samples
@@ -284,22 +285,28 @@ def main():
 
     if split in ('valid', 'both'):
         logger.info(f"─── Validation set ({n_valid} samples) ───")
-        valid_bleu, valid_meteor, valid_chexbert = evaluate_metric(
+        valid_bleu, valid_meteor, valid_chexbert, generated_list, reference_list, gt_labels = evaluate_metric_batched_for_error_analysis(
             model, valid_df, valid_ds, tokenizer, word2idx,
             config, DEVICE,
             num_samples = n_valid,
+            batch_size=BATCH,
             labels_path = config["eval"]["reports_label_path"]
         )
+
+        result = generation_diversity(generated_list, save_dir=config["checkpoint"]["save_dir"] )
+        result = hallucination_rate(generated_list, gt_labels, save_dir=config["checkpoint"]["save_dir"] )
+
         logger.info(f"Valid BLEU (1/2/4): {valid_bleu}")
         logger.info(f"Valid METEOR:       {valid_meteor:.4f}")
         log_chexbert_f1_summary(valid_chexbert, logger)
 
     if split in ('test', 'both'):
         logger.info(f"─── Test set ({n_test} samples) ───")
-        test_bleu, test_meteor, test_chexbert = evaluate_metric(
+        test_bleu, test_meteor, test_chexbert, generated_list, reference_list, gt_labels = evaluate_metric_batched_for_error_analysis(
             model, test_df, test_ds, tokenizer, word2idx,
             config, DEVICE,
             num_samples = n_test,
+            batch_size=BATCH,
             labels_path = config["eval"]["reports_label_path"]
         )
         logger.info(f"Test BLEU (1/2/4): {test_bleu}")

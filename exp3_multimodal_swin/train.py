@@ -49,7 +49,7 @@ logging.basicConfig(
     format="%(asctime)s | [%(levelname)s] | %(message)s",
     handlers=[
         logging.StreamHandler(),                 # print to console
-        logging.FileHandler("logs/multimodal_label_train2.log", mode='w')    # save to file
+        logging.FileHandler("logs/exp3_ablation_heads.log", mode='w')    # save to file
     ]
 )
 logger = logging.getLogger()
@@ -441,6 +441,14 @@ def main():
     model = model.to(conf.DEVICE)
 
     optimizer = AdamW(model.parameters(), lr=conf.LR, weight_decay=conf.WEIGHT_DECAY)
+    optimizer = AdamW([
+        # Frozen or slow — pretrained encoders
+        {"params": model.image_encoder.parameters(),"lr": conf.LR * 0.1}, # 10x smaller
+        {"params": model.text_encoder.parameters(), "lr": conf.LR * 0.1}, # 10x smaller
+        # Faster — fusion and decoder are trained from scratch
+        {"params": model.fusion.parameters(), "lr": conf.LR},
+        {"params": model.decoder.parameters(),"lr": conf.LR},
+    ], weight_decay=conf.WEIGHT_DECAY)
 
     # CE Loss (prev)
     criterion = nn.CrossEntropyLoss(ignore_index=conf.PAD_ID, label_smoothing=conf.LABEL_SMOOTHING)
@@ -532,86 +540,86 @@ def main():
     #     save_path  = os.path.join(save_path, "lr_finder.png"),
     # )
 
-    # # ------------------------------------- TRAINING START ----------------------------------------------------------
-    # logger.info("======= " + "Starting Training " + ("=" * 60))
+    # ------------------------------------- TRAINING START ----------------------------------------------------------
+    logger.info("======= " + "Starting Training " + ("=" * 60))
     
-    # for epoch in range(conf.EPOCHS):
-    #     if epoch > epoch_by_warmup:
-    #         warmup_scheduler = None
+    for epoch in range(conf.EPOCHS):
+        if epoch > epoch_by_warmup:
+            warmup_scheduler = None
         
-    #     train_nll, train_ppl = train_epoch(model, train_dl, optimizer, criterion, DEVICE, warmup_scheduler=warmup_scheduler, clip_grad=conf.GRAD_CLIP)
-    #     valid_nll,  valid_ppl  = evaluate(model,valid_dl,criterion,DEVICE)
+        train_nll, train_ppl = train_epoch(model, train_dl, optimizer, criterion, DEVICE, warmup_scheduler=warmup_scheduler, clip_grad=conf.GRAD_CLIP)
+        valid_nll,  valid_ppl  = evaluate(model,valid_dl,criterion,DEVICE)
         
-    #     # Early Stopping
-    #     if valid_nll < best_valid_loss:
-    #         best_valid_loss  = valid_nll
-    #         patience_counter = 0
+        # Early Stopping
+        if valid_nll < best_valid_loss:
+            best_valid_loss  = valid_nll
+            patience_counter = 0
 
 
-    #         torch.save({
-    #             'model_state_dict': model.state_dict(),
-    #             'hyperparams': {
-    #                 # Core
-    #                 'd_model':            conf.D_MODEL,
-    #                 'dropout':            conf.DROPOUT,
-    #                 # IMG encoder
-    #                 'img_enc_backbone':       conf.IMG_ENC_BACKBONE,
-    #                 'img_enc_freeze_layers':  conf.IMG_ENC_FREEZE_LAYER,
-    #                 'use_fpn':                conf.USE_FPN,
-    #                 'fpn_dim':                conf.FPN_DIM,
-    #                 'fpn_scale':              conf.FPN_SCALE,
+            torch.save({
+                'model_state_dict': model.state_dict(),
+                'hyperparams': {
+                    # Core
+                    'd_model':            conf.D_MODEL,
+                    'dropout':            conf.DROPOUT,
+                    # IMG encoder
+                    'img_enc_backbone':       conf.IMG_ENC_BACKBONE,
+                    'img_enc_freeze_layers':  conf.IMG_ENC_FREEZE_LAYER,
+                    'use_fpn':                conf.USE_FPN,
+                    'fpn_dim':                conf.FPN_DIM,
+                    'fpn_scale':              conf.FPN_SCALE,
 
-    #                 # Text encoder
-    #                 'bert_model':         conf.BERT_MODEL,
-    #                 'bert_freeze_layers': conf.BERT_FREEZE_LAYER,
-    #                 'bert_max_length':    conf.BERT_MAX_LENGTH,
-    #                 # Fusion
-    #                 'fusion_heads':       conf.FUSION_HEADS,
-    #                 'fusion_ff_dim':      conf.FUSION_FF_DIM,
-    #                 # Decoder
-    #                 'vocab_size':         conf.VOCAB_SIZE,
-    #                 'decoder_layers':     conf.DECODER_LAYERS,
-    #                 'decoder_heads':      conf.DECODER_N_HEADS,
-    #                 'decoder_ff_dim':     conf.DECODER_FF_DIM,
-    #                 'decoder_max_len':    conf.DECODER_MAX_LEN,
-    #                 'pad_id':             conf.PAD_ID,
+                    # Text encoder
+                    'bert_model':         conf.BERT_MODEL,
+                    'bert_freeze_layers': conf.BERT_FREEZE_LAYER,
+                    'bert_max_length':    conf.BERT_MAX_LENGTH,
+                    # Fusion
+                    'fusion_heads':       conf.FUSION_HEADS,
+                    'fusion_ff_dim':      conf.FUSION_FF_DIM,
+                    # Decoder
+                    'vocab_size':         conf.VOCAB_SIZE,
+                    'decoder_layers':     conf.DECODER_LAYERS,
+                    'decoder_heads':      conf.DECODER_N_HEADS,
+                    'decoder_ff_dim':     conf.DECODER_FF_DIM,
+                    'decoder_max_len':    conf.DECODER_MAX_LEN,
+                    'pad_id':             conf.PAD_ID,
 
-    #             },
-    #             'optimizer_state_dict': optimizer.state_dict(),
-    #             'epoch':                epoch,
-    #             'valid_loss':           best_valid_loss,
-    #         }, best_model_save_path)
+                },
+                'optimizer_state_dict': optimizer.state_dict(),
+                'epoch':                epoch,
+                'valid_loss':           best_valid_loss,
+            }, best_model_save_path)
 
-    #         print(f"    At epoch: {epoch+1}, best model saved at {best_model_save_path}")
-    #     else:
-    #         patience_counter += 1
+            print(f"    At epoch: {epoch+1}, best model saved at {best_model_save_path}")
+        else:
+            patience_counter += 1
 
-    #     if patience_counter >= patience:
-    #         print(f"\nEarly stopping triggered after {epoch+1} epochs")
-    #         break
+        if patience_counter >= patience:
+            print(f"\nEarly stopping triggered after {epoch+1} epochs")
+            break
         
-    #     if epoch > epoch_by_warmup:
-    #         cosine_scheduler.step()
+        if epoch > epoch_by_warmup:
+            cosine_scheduler.step()
             
-    #     # Metricss
-    #     tl_list.append(train_nll); vl_list.append(valid_nll)
-    #     tp_list.append(train_ppl);  vp_list.append(valid_ppl)
+        # Metricss
+        tl_list.append(train_nll); vl_list.append(valid_nll)
+        tp_list.append(train_ppl);  vp_list.append(valid_ppl)
 
-    #     logger.info(
-    #         "Epoch %d/%d | Train Loss=%.4f | Train PPL=%.2f | Valid Loss=%.4f | Valid PPL=%.2f",
-    #         epoch + 1,
-    #         conf.EPOCHS,
-    #         train_nll,
-    #         train_ppl,
-    #         valid_nll,
-    #         valid_ppl,
-    #     )
+        logger.info(
+            "Epoch %d/%d | Train Loss=%.4f | Train PPL=%.2f | Valid Loss=%.4f | Valid PPL=%.2f",
+            epoch + 1,
+            conf.EPOCHS,
+            train_nll,
+            train_ppl,
+            valid_nll,
+            valid_ppl,
+        )
 
-    # # ── Plots ─────────────────────────────────────────────────────────────────────
-    # from utils.plotting import plot_train_validation_curve
-    # plot_train_validation_curve(tl_list=tl_list, vl_list=vl_list, tp_list=tp_list, vp_list=vp_list, save_path=save_path)
-    # logger.info(f"Plots saved in /{save_path}/training_curves.png")
-    # logger.info("Training & Evaluating completed!")
+    # ── Plots ─────────────────────────────────────────────────────────────────────
+    from utils.plotting import plot_train_validation_curve
+    plot_train_validation_curve(tl_list=tl_list, vl_list=vl_list, tp_list=tp_list, vp_list=vp_list, save_path=save_path)
+    logger.info(f"Plots saved in /{save_path}/training_curves.png")
+    logger.info("Training & Evaluating completed!")
         
         
     # # ── Evaluation Test & Valid Dataset ─────────────────────────────────────────────────────────────────────
@@ -634,7 +642,7 @@ def main():
         config, 
         conf.DEVICE,
         batch_size=conf.BATCH_SIZE,
-        num_samples=1000,
+        num_samples=None,
         labels_path=config["eval"]["reports_label_path"] # switch to reports_label_path
     )
 
@@ -678,7 +686,7 @@ def main():
     for handler in logger.handlers:
         handler.flush()
     
-    temp_log = "/home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/logs/multimodal_swin_train.log"
+    temp_log = "/home/grad/masters/2025/mkamal/mkamal/cxr_report_gen/logs/exp3_ablation_heads.log"
     final_log = os.path.join(save_path, "train.log")
     if os.path.exists(temp_log):
         shutil.copy(temp_log, final_log)

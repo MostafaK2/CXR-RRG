@@ -1,0 +1,45 @@
+# CheXpert Plus Preprocessing Pipeline — Configuration
+paths:
+  root: /home/public/mkamal/dataset
+  csv_name: df_chexpert_plus_240401.csv
+  labels_root: /home/public/mkamal/dataset/chesxbert_labels
+  save_dir: /home/public/mkamal/dataset/filtered_data
+  png_base_dir: /home/public/mkamal/dataset/PNG
+
+label_files:
+  impression: impression_fixed.json
+  findings:   findings_fixed.json
+  report:     report_fixed.json
+
+filtering:
+  frontal_only: true        # drop lateral views
+  require_impression: true  # drop rows with no parseable impression
+
+image:
+  size: 224                 # resize target (px)
+  channels: 1               # grayscale
+  dtype: float32
+
+random_seed: 42
+
+output_columns:
+  # Identifiers
+  - report
+  - path_to_image
+  - path_to_png
+  - path_no_ext
+  - deid_patient_id
+  - patient_report_date_order
+  - split
+  - frontal_lateral
+  - ap_pa
+  - clinical_history
+  # Generation targets (lowercase)
+  - section_impression_gen
+  - section_impression
+  - section_findings_gen
+  - section_findings
+  - condensed_report
+  # Labelling targets (cased, RadGraph input)
+  - section_impression_label
+  - section_findings_label

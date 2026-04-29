@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from image_encoder import SwinEncoder
+from exp2_multimodal.image_encoder import SwinEncoder
 from exp2_multimodal.text_encoder  import ClinicalTextEncoder
 from exp2_multimodal.fusion_module import CrossAttentionFusion
 from exp2_multimodal.decoder import RRGDecoder
@@ -21,7 +21,7 @@ class Multimodal_Memory(nn.Module):
 
             # Swin encoder
             img_enc_backbone: str = "swin_t",
-            img_enc_freeze_layers: int = 8,
+            img_enc_freeze_layers: int = 9,
                 # FPN Configurations Dont change for SwinT
                 use_fpn: bool = True,
                 fpn_dim: int = 256,
